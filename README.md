@@ -6,6 +6,21 @@ A lightweight desktop PCB layout editor written in **C99**, using [raylib 5.5](h
 
 New to designing circuit boards? Start with the [PCB design guide](PCB_DESIGN_GUIDE.md): learn the terminology, calculate a simple LED circuit, practice placement and routing in PCBEE, and follow the steps toward a manufactured board. The guide includes review checklists, exercises, and further learning resources, and is bundled with desktop packages for offline reading.
 
+### Interactive LED lab
+
+Click **Learn PCB** in the toolbar or press **F2** to start an in-app, eight-step lesson (about 10–15 minutes):
+
+1. Choose the current-limiting resistor for a 5 V LED circuit, with feedback on each answer.
+2. Place and rotate a connector, resistor, and LED using blue footprint targets.
+3. Route the supply, LED drive, and ground connections using highlighted pads and dotted connection hints.
+4. Check the completed layout and save your practice board.
+
+The learning panel stays beside the editable board. **Check step** validates your actual placement and copper connections; **Next step** unlocks after a successful check. Checks catch missing connections, touching/crossing nets, connections to unused header pads, and isolated stray traces in this fixed exercise. Earlier objectives are checked again before advancing, and edits invalidate a previous pass. Use **Back**, undo/redo, and the normal editing tools to correct mistakes.
+
+Starting or restarting opens a fresh **63.5 × 45.72 mm** practice board and asks before discarding unsaved edits. **Exit lesson** keeps the current board for editing and saving. Saving uses `led-practice.pcb` by default; lesson progress is not stored in project files. New or successfully opening another project ends the lesson.
+
+Lesson checks apply only to the prescribed LED layout, not arbitrary circuits or manufacturing rules. Dotted hints are not copper or guaranteed obstacle-free routes. The full [design guide](PCB_DESIGN_GUIDE.md) explains the next steps toward fabrication.
+
 ## Desktop packages
 
 The build workflow produces these portable archives, each with the example project, README, PCB design guide, third-party licenses, and a `.sha256` checksum:
@@ -133,6 +148,7 @@ The default board is **101.6 × 76.2 mm**, with a **1.27 mm snap grid**. The vis
 | Undo | `Ctrl/Cmd + Z` |
 | Redo | `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y` |
 | Help | `F1` |
+| Start / exit interactive learning | `F2` or **Learn PCB** |
 
 Save/Open use a simple UTF-8 path-entry dialog. Relative paths resolve from the directory you launched the app in. `Ctrl/Cmd + A` clears the field, and `Ctrl/Cmd + V` replaces it with a pasted path. Backspace removes one complete Unicode code point; the built-in font may display unsupported glyphs as `?`, but the path is preserved. Saving to an existing path replaces that project on all three platforms. New, Open, and closing the window prompt before discarding unsaved edits.
 
@@ -154,9 +170,12 @@ The PCB model does not call `malloc`. Fixed-capacity arrays hold components and 
 ```text
 src/pcb.h          Board types, capacities, and model API
 src/pcb.c          Geometry, routing, history, project persistence
+src/learn.h        Fixed LED lesson targets and checking API
+src/learn.c        Lesson placement and copper-connectivity checks
 src/main.c         Desktop UI, rendering, and input
 src/windows_entry.c Windows GUI entry point and UTF-8 command-line conversion
 tests/test_pcb.c   Model/persistence regression tests (no graphics required)
+tests/test_learn.c Lesson progression, connectivity, and short-circuit regressions
 tests/verify_package.py Archive, architecture, checksum, and packaged-app smoke test
 examples/demo.pcb  Example layout
 CMakeLists.txt     Portable builds, CTest, and CPack archives

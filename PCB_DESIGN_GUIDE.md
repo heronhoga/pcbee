@@ -6,6 +6,8 @@ This guide takes you from the basic vocabulary to a small LED layout, then expla
 
 See the [README](README.md#build-and-run) to launch PCBEE and the [controls](README.md#controls) for shortcuts.
 
+**Prefer learning by doing?** Click **Learn PCB** in the app toolbar (or press **F2**) for the interactive LED lab. It combines a resistor quiz, placement targets, highlighted routing endpoints, and checks with corrective feedback. Start with that guided layout, then use the free-placement exercise below to practice your own arrangement. Starting a lesson opens a fresh practice board; save existing edits first. Lesson progress is not saved with the board.
+
 ## 1. Understand the pieces
 
 | Term | Meaning |
@@ -31,7 +33,7 @@ See the [README](README.md#build-and-run) to launch PCBEE and the [controls](REA
 
 PCBEE currently provides five through-hole footprints, placement and rotation, and manual routing on one top-copper layer. It is useful for practicing layout decisions and reviewing connections by hand.
 
-It does not yet have schematics, assigned nets, a ratsnest, ERC/DRC, vias, copper pours, or manufacturing export. It will allow copper to cross or touch without reporting a short. A saved `.pcb` project is an editable PCBEE layout, not a fabrication file. The bundled `examples/demo.pcb` demonstrates editing rather than a validated circuit.
+It does not yet have schematics, assigned nets, a general ratsnest, ERC/DRC, vias, copper pours, or manufacturing export. Normal editing allows copper to cross or touch without reporting a short. The interactive lesson provides connection hints and on-demand checks only for its fixed LED exercise. A saved `.pcb` project is an editable PCBEE layout, not a fabrication file. The bundled `examples/demo.pcb` demonstrates editing rather than a validated circuit.
 
 ## 2. Plan the circuit before placing parts
 
