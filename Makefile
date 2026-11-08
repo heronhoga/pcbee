@@ -7,6 +7,10 @@ CFLAGS ?= -O2
 CFLAGS += -std=c99 -Wall -Wextra -Wpedantic
 UNAME_S := $(shell uname -s)
 
+ifeq ($(OS),Windows_NT)
+$(error Use CMake on Windows; see README.md for the Visual Studio x64 build)
+endif
+
 ifeq ($(UNAME_S),Darwin)
 LDLIBS := -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 else

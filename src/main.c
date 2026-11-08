@@ -3,7 +3,12 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#ifndef PCBEE_VERSION
+#define PCBEE_VERSION "0.2.0"
+#endif
 
 #define SIDEBAR 228
 #define HEADER 76
@@ -107,13 +112,23 @@ static void open_modal(Modal modal)
     while (GetCharPressed() != 0) {}
 }
 
+static void default_path(void)
+{
+    snprintf(app.path, sizeof(app.path), "board.pcb");
+#ifdef __APPLE__
+    /* Finder may launch bundles with an unwritable working directory. */
+    const char *home = getenv("HOME");
+    if (home) snprintf(app.path, sizeof(app.path), "%s/board.pcb", home);
+#endif
+}
+
 static void new_board(void)
 {
     pcb_init(&app.board);
     app.saved = app.board;
     pcb_history_init(&app.history, &app.board);
     set_tool(TOOL_SELECT);
-    snprintf(app.path, sizeof(app.path), "board.pcb");
+    default_path();
     app.modal = MODAL_NONE;
     fit_board();
     notify("New board ready. Choose a footprint to start placing.");
@@ -443,7 +458,7 @@ static void draw_toolbar(void)
     DrawPoly((Vector2){32, 36}, 6, 14, 30, accent);
     DrawCircle(32, 36, 5, background);
     DrawText("PCBEE", 55, 19, 26, text);
-    DrawText("PCB LAYOUT / v0.1", 56, 49, 10, muted);
+    DrawText("PCB LAYOUT / v" PCBEE_VERSION, 56, 49, 10, muted);
     float x = SIDEBAR + 20;
     if (button((Rectangle){x, 22, 62, 32}, "New", false, enabled)) request_new();
     if (button((Rectangle){x + 70, 22, 62, 32}, "Open", false, enabled)) request_open();
@@ -564,9 +579,11 @@ static void draw_modal(void)
         int ch;
         while ((ch = GetCharPressed()) != 0) {
             size_t length = strlen(app.input);
-            if (ch >= 32 && ch < 127 && length + 1 < sizeof(app.input)) {
-                app.input[length] = (char)ch;
-                app.input[length + 1] = '\0';
+            int bytes = 0;
+            const char *encoded = CodepointToUTF8(ch, &bytes);
+            if (ch >= 32 && ch != 127 && bytes > 0 && length + (size_t)bytes < sizeof(app.input)) {
+                memcpy(app.input + length, encoded, (size_t)bytes);
+                app.input[length + (size_t)bytes] = '\0';
             }
         }
         bool command = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
@@ -574,14 +591,22 @@ static void draw_modal(void)
         if (command && IsKeyPressed(KEY_A)) app.input[0] = '\0';
         if (command && IsKeyPressed(KEY_V)) {
             const char *clipboard = GetClipboardText();
-            if (clipboard) snprintf(app.input, sizeof(app.input), "%s", clipboard);
+            if (clipboard && strlen(clipboard) < sizeof(app.input))
+                snprintf(app.input, sizeof(app.input), "%s", clipboard);
+            else if (clipboard) notify("The pasted path is too long.");
         }
-        if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && app.input[0])
-            app.input[strlen(app.input) - 1] = '\0';
+        if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && app.input[0]) {
+            size_t length = strlen(app.input) - 1;
+            while (length > 0 && ((unsigned char)app.input[length] & 0xc0) == 0x80) --length;
+            app.input[length] = '\0';
+        }
         DrawRectangleRounded((Rectangle){x + 28, y + 96, width - 56, 43}, 0.1f, 4, background);
         DrawRectangleLinesEx((Rectangle){x + 28, y + 96, width - 56, 43}, 1, accent);
         const char *visible = app.input;
-        while (*visible && MeasureText(visible, 18) > width - 82) visible++;
+        while (*visible && MeasureText(visible, 18) > width - 82) {
+            ++visible;
+            while (((unsigned char)*visible & 0xc0) == 0x80) ++visible;
+        }
         DrawText(visible, (int)x + 40, (int)y + 109, 18, text);
         if (GetTime() < app.message_until) {
             BeginScissorMode((int)x + 28, (int)y + 146, (int)width - 56, 22);
@@ -614,13 +639,27 @@ static void draw_modal(void)
 int main(int argc, char **argv)
 {
     bool smoke = argc > 1 && strcmp(argv[1], "--smoke-test") == 0;
-    if (argc > 2 || (argc > 1 && strcmp(argv[1], "--help") == 0)) {
-        puts("Usage: pcbee [project.pcb | --smoke-test]\nSee README.md for controls and build instructions.");
-        return argc > 2 ? 1 : 0;
+    bool help = argc == 2 && strcmp(argv[1], "--help") == 0;
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        puts("PCBEE " PCBEE_VERSION);
+        return 0;
     }
+    bool invalid = argc > (smoke ? 3 : 2) ||
+                   (argc > 1 && !smoke && !help && argv[1][0] == '-');
+    if (help || invalid) {
+        puts("Usage: pcbee [project.pcb]\n       pcbee --smoke-test [project.pcb]\n"
+             "       pcbee --help | --version\nSee README.md for controls and build instructions.");
+        return invalid ? 1 : 0;
+    }
+    const char *project = smoke ? (argc == 3 ? argv[2] : NULL) : (argc == 2 ? argv[1] : NULL);
     pcb_init(&app.board);
-    snprintf(app.path, sizeof(app.path), "%s", argc > 1 && !smoke ? argv[1] : "board.pcb");
-    if (argc > 1 && !smoke) {
+    if (project && strlen(project) >= sizeof(app.path)) {
+        fputs("Project path is too long.\n", stderr);
+        return 1;
+    }
+    default_path();
+    if (project) {
+        snprintf(app.path, sizeof(app.path), "%s", project);
         char error[256];
         if (!pcb_load(&app.board, app.path, error, sizeof(error))) {
             fprintf(stderr, "Cannot open %s: %s\n", app.path, error);
@@ -666,6 +705,7 @@ int main(int argc, char **argv)
         if (smoke && ++frames >= 3) app.running = false;
     }
     CloseWindow();
+    if (smoke && frames < 3) return 1;
     if (smoke) puts("PCBEE desktop smoke test passed (3 rendered frames).");
     return 0;
 }

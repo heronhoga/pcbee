@@ -1,5 +1,7 @@
 /.deps/
 /build/
+/build-*/
+/dist/
 /board.pcb
 /board.pcb.tmp
 *.dSYM/

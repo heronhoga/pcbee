@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 static void close_float(float actual, float expected)
 {
     assert(fabsf(actual - expected) < 0.0001f);
@@ -164,6 +169,11 @@ static void test_persistence(void)
     assert(memcmp(&before, &loaded, sizeof(loaded)) == 0);
     assert(!pcb_save(&board, "build/no-such-directory/board.pcb", error, sizeof(error)));
     assert(error[0]);
+    /* Replacement failure must be reported, and its temporary file removed. */
+    assert(!pcb_save(&board, "build", error, sizeof(error)));
+    FILE *temporary = fopen("build.tmp", "r");
+    assert(!temporary);
+    assert(error[0]);
     pcb_init(&board);
     assert(pcb_save(&board, "build/test-roundtrip.pcb", error, sizeof(error)));
     assert(pcb_load(&loaded, "build/test-roundtrip.pcb", error, sizeof(error)));
@@ -172,12 +182,43 @@ static void test_persistence(void)
     remove("build/test-invalid.pcb");
 }
 
+static void test_platform_paths(void)
+{
+    /* UTF-8 bytes, independent of the compiler's source/execution encoding. */
+    const char *path = "build/test-\xc3\xa9-\xe6\x9d\xbf space.pcb";
+    PcbBoard board, loaded;
+    char error[256];
+    pcb_init(&board);
+    assert(pcb_save(&board, path, error, sizeof(error)));
+    assert(pcb_add_component(&board, PCB_LED, (PcbPoint){20, 20}, 0) == 0);
+    assert(pcb_save(&board, path, error, sizeof(error)));
+    assert(pcb_load(&loaded, path, error, sizeof(error)));
+    assert(memcmp(&board, &loaded, sizeof(board)) == 0);
+#ifdef _WIN32
+    /* A sharing violation must leave the previous project readable/intact. */
+    const wchar_t *wide = L"build/test-\u00e9-\u677f space.pcb";
+    HANDLE lock = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    assert(lock != INVALID_HANDLE_VALUE);
+    pcb_init(&board);
+    assert(!pcb_save(&board, path, error, sizeof(error)));
+    assert(error[0]);
+    assert(CloseHandle(lock));
+    assert(pcb_load(&board, path, error, sizeof(error)));
+    assert(memcmp(&board, &loaded, sizeof(board)) == 0);
+    assert(DeleteFileW(wide));
+#else
+    assert(remove(path) == 0);
+#endif
+}
+
 int main(void)
 {
     test_placement();
     test_routing();
     test_history();
     test_persistence();
+    test_platform_paths();
     printf("All PCB core tests passed. Board: %zu bytes; bounded history: %zu bytes.\n",
            sizeof(PcbBoard), sizeof(PcbHistory));
     return 0;

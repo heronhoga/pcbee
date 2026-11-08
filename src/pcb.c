@@ -7,6 +7,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+/* Project paths are UTF-8 on every platform, independent of the Windows ACP. */
+static bool wide_path(const char *path, wchar_t *wide, int capacity)
+{
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, capacity))
+        return true;
+    errno = GetLastError() == ERROR_INSUFFICIENT_BUFFER ? ENAMETOOLONG : EINVAL;
+    return false;
+}
+
+static FILE *open_project(const char *path, bool writing)
+{
+    wchar_t wide[4096];
+    if (!wide_path(path, wide, 4096)) return NULL;
+    return _wfopen(wide, writing ? L"w" : L"r");
+}
+
+static void remove_temporary(const char *path)
+{
+    wchar_t wide[4096];
+    if (wide_path(path, wide, 4096)) DeleteFileW(wide);
+}
+#else
+static FILE *open_project(const char *path, bool writing)
+{
+    return fopen(path, writing ? "w" : "r");
+}
+
+static void remove_temporary(const char *path)
+{
+    remove(path);
+}
+#endif
+
 static const PcbFootprintInfo footprints[PCB_FOOTPRINT_COUNT] = {
     { PCB_RESISTOR, "Resistor", "R", "Axial / 7.62 mm pitch", 5.08f, 2.54f, 2,
       {{-3.81f, 0}, {3.81f, 0}} },
@@ -201,7 +238,7 @@ bool pcb_save(const PcbBoard *board, const char *path, char *error, size_t error
     char temporary[4096];
     if (snprintf(temporary, sizeof(temporary), "%s.tmp", path) >= (int)sizeof(temporary))
         return fail(error, error_size, "Project path is too long.");
-    FILE *file = fopen(temporary, "w");
+    FILE *file = open_project(temporary, true);
     if (!file) return fail(error, error_size, strerror(errno));
     bool ok = fprintf(file, "PCBEE 1\nBOARD %.9g %.9g %d\nCOMPONENTS %d\n",
         board->width, board->height, board->next_id, board->component_count) > 0;
@@ -219,14 +256,34 @@ bool pcb_save(const PcbBoard *board, const char *path, char *error, size_t error
     ok = ok && fprintf(file, "END\n") > 0;
     if (fclose(file) != 0) ok = false;
     if (!ok) {
-        remove(temporary);
+        remove_temporary(temporary);
         return fail(error, error_size, "Could not finish writing the project.");
     }
-    if (rename(temporary, path) != 0) {
+#ifdef _WIN32
+    wchar_t wide_temporary[4096], wide_destination[4096];
+    if (!wide_path(temporary, wide_temporary, 4096) ||
+        !wide_path(path, wide_destination, 4096)) {
         int saved_errno = errno;
-        remove(temporary);
+        remove_temporary(temporary);
         return fail(error, error_size, strerror(saved_errno));
     }
+    /* C rename() cannot overwrite on Windows. Never delete the old file first. */
+    if (!MoveFileExW(wide_temporary, wide_destination,
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DWORD code = GetLastError();
+        remove_temporary(temporary);
+        if (error && error_size)
+            snprintf(error, error_size, "Could not replace the project (Windows error %lu).",
+                     (unsigned long)code);
+        return false;
+    }
+#else
+    if (rename(temporary, path) != 0) {
+        int saved_errno = errno;
+        remove_temporary(temporary);
+        return fail(error, error_size, strerror(saved_errno));
+    }
+#endif
     if (error && error_size) error[0] = '\0';
     return true;
 }
@@ -261,7 +318,7 @@ static bool read_float(FILE *file, float *value)
 
 bool pcb_load(PcbBoard *board, const char *path, char *error, size_t error_size)
 {
-    FILE *file = fopen(path, "r");
+    FILE *file = open_project(path, false);
     if (!file) return fail(error, error_size, strerror(errno));
     PcbBoard loaded;
     pcb_init(&loaded);

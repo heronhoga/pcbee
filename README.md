@@ -1,43 +1,109 @@
 # PCBEE
 
-A lightweight desktop PCB layout editor written in **C99**, using [raylib 5.5](https://www.raylib.com/) for its window, drawing, and input. This is a working first version focused on placing through-hole footprints and drawing copper traces.
+A lightweight desktop PCB layout editor written in **C99**, using [raylib 5.5](https://www.raylib.com/) for its window, drawing, and input. Version **0.2.0** adds cross-platform builds and packaging to the working through-hole placement and copper-routing editor.
+
+## Learn PCB design
+
+New to designing circuit boards? Start with the [PCB design guide](PCB_DESIGN_GUIDE.md): learn the terminology, calculate a simple LED circuit, practice placement and routing in PCBEE, and follow the steps toward a manufactured board. The guide includes review checklists, exercises, and further learning resources, and is bundled with desktop packages for offline reading.
+
+## Desktop packages
+
+The build workflow produces these portable archives, each with the example project, README, PCB design guide, third-party licenses, and a `.sha256` checksum:
+
+| Target | Archive | Launch after extracting |
+| --- | --- | --- |
+| macOS 11+ / Apple Silicon (ARM64) | `pcbee-0.2.0-macos-arm64.zip` | Open `PCBEE.app` |
+| Windows 10/11 / x64 | `pcbee-0.2.0-windows-x64.zip` | Open `pcbee.exe` |
+| Linux / x64 | `pcbee-0.2.0-linux-x64.tar.gz` | Run `./pcbee` |
+
+Download workflow artifacts from **Actions → Build, test, and package** after a successful run. Version-tag builds also publish these archives to **Releases**. These packages are unsigned; macOS distribution is not Developer ID signed or notarized yet.
+
+All targets require a graphical desktop and OpenGL 3.3-capable driver. Linux packages are built on Ubuntu 22.04 (glibc 2.35 baseline) and use X11, or XWayland in a Wayland session. On Ubuntu, runtime libraries can be installed with:
+
+```sh
+sudo apt install libgl1 libx11-6 libxrandr2 libxi6 libxcursor1 libxinerama1
+```
+
+raylib is statically linked. The Visual Studio build also statically links the C runtime, so it needs no separate raylib DLL or Visual C++ redistributable.
 
 ## Build and run
 
-### macOS
+The cross-platform build uses **CMake 3.24+** and a native C compiler. CMake downloads a SHA-256-verified raylib 5.5 source archive on the first desktop build; later builds use the local copy. A separate raylib installation is not required. The model-only test build needs no network or graphics dependencies.
 
-Install Apple's command-line tools if needed:
+### macOS ARM64
+
+Install Apple's command-line tools (`xcode-select --install`) and CMake (`brew install cmake`, or the installer from cmake.org). From the project directory:
 
 ```sh
-xcode-select --install
+cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build build/cmake --parallel
+open build/cmake/PCBEE.app
+
+# Open the example from a terminal:
+./build/cmake/PCBEE.app/Contents/MacOS/PCBEE examples/demo.pcb
 ```
 
-From this project directory:
+The bundle's default save path is `~/board.pcb`, so launching from Finder does not try to save into an unwritable working directory.
+
+### Windows x64
+
+Install **Visual Studio 2022** (or Build Tools) with **Desktop development with C++**, including the Windows SDK, plus CMake 3.24+. In PowerShell from the project directory:
+
+```powershell
+cmake -S . -B build/cmake -G "Visual Studio 17 2022" -A x64
+cmake --build build/cmake --config Release --parallel
+ctest --test-dir build/cmake -C Release --output-on-failure
+.\build\cmake\Release\pcbee.exe
+
+# Open the example:
+.\build\cmake\Release\pcbee.exe examples\demo.pcb
+```
+
+The Windows target is a GUI executable. Project paths and command-line arguments use UTF-8 internally, including filenames outside the Windows system code page. MSVC compiles the C99 source in its C11 mode.
+
+### Linux x64 (X11)
+
+On Debian/Ubuntu:
+
+```sh
+sudo apt install build-essential cmake libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
+cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build/cmake --parallel
+./build/cmake/pcbee examples/demo.pcb
+```
+
+Use CMake 3.24+ from cmake.org if your distribution's package is older.
+
+### Create a distributable archive
+
+After building on the target OS:
+
+```sh
+cpack --config build/cmake/CPackConfig.cmake -C Release -B dist
+```
+
+Archives and checksums appear in `dist/`. To reuse an existing raylib source checkout offline, add `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=/absolute/path/to/raylib` to the configure command. Build in separate directories when changing toolchains or target architectures.
+
+### Lightweight Make build (macOS / Linux)
+
+The original Unix build remains available with only a C compiler, Make, and Git:
 
 ```sh
 make -j4
-./build/pcbee
-```
-
-The first build downloads raylib into `.deps/raylib` and builds it locally. It needs Git and an internet connection. Subsequent builds work offline; no Homebrew packages, CMake, or separate raylib install are required.
-
-Open the included example:
-
-```sh
 ./build/pcbee examples/demo.pcb
 ```
 
-### Linux (X11)
+Its first build clones raylib 5.5 into `.deps/raylib`. Linux still needs the native development libraries listed above. Use CMake for Windows and for packaging.
 
-The Makefile also includes a Linux build configuration. On Debian/Ubuntu, install raylib's native build dependencies, then use the same build commands:
+### Editor diagnostics
 
-```sh
-sudo apt install build-essential git libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
-make -j4
-./build/pcbee
-```
-
-The current version has been built and smoke-tested on macOS / Apple Silicon. Linux is not yet verified. A graphical desktop and OpenGL 3.3-capable driver are required.
+CMake's Makefile and Ninja generators produce `build/cmake/compile_commands.json`.
+The checked-in `.clangd` points clangd at this database so it can resolve raylib's
+headers and types. Run the CMake configure command for your platform once, then
+restart your editor's language server if diagnostics are stale. Other C/C++
+extensions can use the same compilation database; for Visual Studio generators,
+use the editor's CMake integration instead. If you choose another build directory,
+update the compilation database path in your editor configuration.
 
 ## First layout
 
@@ -68,7 +134,7 @@ The default board is **101.6 × 76.2 mm**, with a **1.27 mm snap grid**. The vis
 | Redo | `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y` |
 | Help | `F1` |
 
-Save/Open use a simple path-entry dialog. Relative paths resolve from the directory you launched the app in. `Ctrl/Cmd + A` clears the field, and `Ctrl/Cmd + V` replaces it with a pasted path. Saving to an existing path replaces that project. New, Open, and closing the window prompt before discarding unsaved edits.
+Save/Open use a simple UTF-8 path-entry dialog. Relative paths resolve from the directory you launched the app in. `Ctrl/Cmd + A` clears the field, and `Ctrl/Cmd + V` replaces it with a pasted path. Backspace removes one complete Unicode code point; the built-in font may display unsupported glyphs as `?`, but the path is preserved. Saving to an existing path replaces that project on all three platforms. New, Open, and closing the window prompt before discarding unsaved edits.
 
 ## Scope of this first version
 
@@ -89,18 +155,47 @@ The PCB model does not call `malloc`. Fixed-capacity arrays hold components and 
 src/pcb.h          Board types, capacities, and model API
 src/pcb.c          Geometry, routing, history, project persistence
 src/main.c         Desktop UI, rendering, and input
+src/windows_entry.c Windows GUI entry point and UTF-8 command-line conversion
 tests/test_pcb.c   Model/persistence regression tests (no graphics required)
+tests/verify_package.py Archive, architecture, checksum, and packaged-app smoke test
 examples/demo.pcb  Example layout
+CMakeLists.txt     Portable builds, CTest, and CPack archives
+.github/workflows/build.yml Three-target CI and tagged releases
 ```
 
 The core is independent of raylib, making it a place to add net connectivity and design-rule checks. The UI uses raylib's built-in font and primitive shapes, with no external assets or UI framework.
 
 ## Checks
 
+Run model tests from a CMake build:
+
+```sh
+ctest --test-dir build/cmake -C Release --output-on-failure
+```
+
+For offline, headless model tests with AddressSanitizer + UBSan (GCC/Clang):
+
+```sh
+cmake -S . -B build/sanitize -DPCBEE_BUILD_APP=OFF -DPCBEE_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/sanitize --parallel
+ctest --test-dir build/sanitize --output-on-failure
+```
+
+Add `-DPCBEE_SMOKE_TEST=ON` when configuring a desktop build to register a three-frame window test in CTest. It requires a graphical session; on headless Linux run CTest through `xvfb-run -a` after installing `xvfb` and `xauth`. Tests stay active in Release builds and keep fixtures inside the build directory.
+
+The Make equivalents and direct smoke-test command are:
+
 ```sh
 make test                       # Geometry, bounds, routing, history, file validation
 make sanitize                   # Same tests with AddressSanitizer + UBSan
 ./build/pcbee --smoke-test       # Open a desktop window, render 3 frames, then exit
+./build/pcbee --smoke-test examples/demo.pcb
 ```
 
-The model tests need only a C compiler and Make; they do not download raylib. Run them from the project root. `make clean` removes build outputs while retaining the downloaded dependency.
+Run Make tests from the project root. `make clean` removes `build/` while retaining `.deps/`.
+
+### CI and releases
+
+Every push and pull request builds on native macOS ARM64, Windows x64, and Linux x64 runners. The workflow runs model/persistence tests (including Unicode paths, overwrite, and Windows sharing violations), creates archives, checks their binary architectures and checksums, and launches the extracted app with the bundled example from a Unicode path. Linux uses Xvfb/Mesa; Windows uses a pinned, checksum-verified Mesa software renderer solely for CI. A separate headless Linux job runs ASan/UBSan.
+
+To publish, update the version in `CMakeLists.txt` and the fallback `PCBEE_VERSION` in `src/main.c`, update the README, then push a matching `vX.Y.Z` tag. The workflow rejects mismatched tags and creates the GitHub release only after all build and sanitizer jobs pass. No signing credentials are needed for the current unsigned archives.

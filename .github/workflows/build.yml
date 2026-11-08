@@ -1,0 +1,113 @@
+name: Build, test, and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: macos-arm64
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
+          - os: windows-2022
+            target: windows-x64
+            cmake_args: -A x64
+          - os: ubuntu-22.04
+            target: linux-x64
+            cmake_args: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check release tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          version = re.search(r'project\(PCBEE VERSION (\S+)', Path('CMakeLists.txt').read_text())[1]
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version, 'Tag must match CMakeLists.txt version'
+          PY
+      - name: Install Linux build and display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev xvfb xauth
+      - name: Configure
+        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+      - name: Build
+        run: cmake --build build/cmake --config Release --parallel
+      - name: Model and persistence tests
+        run: ctest --test-dir build/cmake -C Release --output-on-failure
+      - name: Package
+        run: cpack --config build/cmake/CPackConfig.cmake -C Release -B dist
+      - name: Install Windows CI software OpenGL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/install-mesa.ps1
+      - name: Verify and launch packaged app
+        env:
+          TARGET: ${{ matrix.target }}
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a python tests/verify_package.py dist/*-linux-x64.tar.gz --target "$TARGET"
+          elif [[ "$RUNNER_OS" == Windows ]]; then
+            python tests/verify_package.py dist/*-windows-x64.zip --target "$TARGET" --mesa-dir "$PCBEE_MESA_DIR"
+          else
+            python tests/verify_package.py dist/*-macos-arm64.zip --target "$TARGET"
+          fi
+      - name: Upload packages and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcbee-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+
+  sanitize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure headless sanitizers
+        run: cmake -S . -B build/sanitize -DPCBEE_BUILD_APP=OFF -DPCBEE_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build/sanitize --parallel
+      - run: ctest --test-dir build/sanitize --output-on-failure
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, sanitize]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pcbee-*
+          path: dist
+          merge-multiple: true
+      - name: Publish tested packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "PCBEE $RELEASE_TAG"
