@@ -1,0 +1,5 @@
+/.deps/
+/build/
+/board.pcb
+/board.pcb.tmp
+*.dSYM/
