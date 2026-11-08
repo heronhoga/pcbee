@@ -44,7 +44,7 @@ if(PCBEE_SANITIZE)
     target_link_options(pcbee_options INTERFACE -fsanitize=address,undefined)
 endif()
 
-add_library(pcb_core STATIC src/pcb.c src/learn.c)
+add_library(pcb_core STATIC src/pcb.c src/learn.c src/i18n.c)
 target_include_directories(pcb_core PUBLIC src)
 target_link_libraries(pcb_core PUBLIC pcbee_options)
 if(NOT MSVC)
@@ -94,7 +94,7 @@ if(PCBEE_BUILD_APP)
         set_property(TARGET raylib PROPERTY C_STANDARD 11)
     endif()
 
-    add_executable(pcbee src/main.c)
+    add_executable(pcbee src/main.c src/ui.c src/font_data.c)
     target_link_libraries(pcbee PRIVATE pcb_core raylib)
     target_compile_definitions(pcbee PRIVATE PCBEE_VERSION="${PROJECT_VERSION}")
     if(APPLE)
@@ -102,8 +102,14 @@ if(PCBEE_BUILD_APP)
             MACOSX_BUNDLE TRUE OUTPUT_NAME PCBEE
             MACOSX_BUNDLE_BUNDLE_NAME PCBEE
             MACOSX_BUNDLE_GUI_IDENTIFIER org.pcbee.editor
-            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+             MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+        add_custom_command(TARGET pcbee POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_BUNDLE_DIR:pcbee>/Contents/Resources/fonts"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/IBMPlexMono-Regular.ttf"
+                "$<TARGET_BUNDLE_DIR:pcbee>/Contents/Resources/fonts/IBMPlexMono-Regular.ttf"
+            VERBATIM)
     elseif(WIN32)
         target_sources(pcbee PRIVATE src/windows_entry.c)
         target_link_libraries(pcbee PRIVATE shell32)
@@ -111,6 +117,15 @@ if(PCBEE_BUILD_APP)
         if(MINGW)
             target_link_options(pcbee PRIVATE -static -static-libgcc)
         endif()
+    endif()
+    if(NOT APPLE)
+        add_custom_command(TARGET pcbee POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:pcbee>/assets/fonts"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/IBMPlexMono-Regular.ttf"
+                "$<TARGET_FILE_DIR:pcbee>/assets/fonts/IBMPlexMono-Regular.ttf"
+            VERBATIM)
+        install(FILES assets/fonts/IBMPlexMono-Regular.ttf DESTINATION assets/fonts)
     endif()
     if(BUILD_TESTING AND PCBEE_SMOKE_TEST)
         add_test(NAME desktop_smoke COMMAND pcbee --smoke-test)
@@ -120,6 +135,7 @@ if(PCBEE_BUILD_APP)
     install(TARGETS pcbee RUNTIME DESTINATION . BUNDLE DESTINATION .)
     install(FILES README.md PCB_DESIGN_GUIDE.md DESTINATION .)
     install(FILES examples/demo.pcb DESTINATION examples)
+    install(FILES assets/fonts/OFL.txt DESTINATION licenses RENAME ibm-plex-mono.txt)
     install(FILES "${raylib_SOURCE_DIR}/LICENSE" DESTINATION licenses RENAME raylib.txt)
     install(FILES "${raylib_SOURCE_DIR}/src/external/glfw/LICENSE.md"
         DESTINATION licenses RENAME glfw.txt)

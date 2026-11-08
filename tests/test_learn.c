@@ -1,4 +1,5 @@
 #include "learn.h"
+#include "i18n.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -38,6 +39,13 @@ static void complete_board(PcbBoard *board)
 
 int main(void)
 {
+    assert(strcmp(tr("Save"), "Save") == 0);
+    i18n_set_language(LANGUAGE_INDONESIAN);
+    assert(strcmp(tr("Save"), "Simpan") == 0);
+    assert(strcmp(tr("An untranslated project path.pcb"), "An untranslated project path.pcb") == 0);
+    assert(!learn_check(&(PcbBoard){0}, 1, feedback, sizeof(feedback)));
+    assert(strstr(feedback, "Letakkan"));
+    i18n_set_language(LANGUAGE_ENGLISH);
     PcbBoard board;
     pcb_init(&board);
     assert(!learn_check(&board, 1, feedback, sizeof(feedback)));

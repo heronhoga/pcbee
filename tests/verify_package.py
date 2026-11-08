@@ -51,7 +51,7 @@ def main():
         assert len(roots) == 1 and roots[0].is_dir(), "Expected one package root"
         root = roots[0]
         for required in ["README.md", "PCB_DESIGN_GUIDE.md", "examples/demo.pcb",
-                         "licenses/raylib.txt", "licenses/glfw.txt"]:
+                         "licenses/raylib.txt", "licenses/glfw.txt", "licenses/ibm-plex-mono.txt"]:
             assert (root / required).is_file(), f"Missing {required}"
         executables = {
             "macos-arm64": "PCBEE.app/Contents/MacOS/PCBEE",
@@ -59,6 +59,10 @@ def main():
             "linux-x64": "pcbee",
         }
         executable = root / executables[args.target]
+        font = (root / "PCBEE.app/Contents/Resources/fonts/IBMPlexMono-Regular.ttf"
+                if args.target == "macos-arm64" else root / "assets/fonts/IBMPlexMono-Regular.ttf")
+        assert font.is_file(), "Missing bundled monospace font"
+        assert font.read_bytes().startswith(b"\x00\x01\x00\x00"), "Invalid TrueType font"
         assert executable.is_file(), "Missing executable"
         verify_architecture(executable, args.target)
         assert not any(root.rglob("*.a")), "Development libraries leaked into package"

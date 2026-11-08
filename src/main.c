@@ -1,5 +1,7 @@
 #include "pcb.h"
 #include "learn.h"
+#include "i18n.h"
+#include "ui.h"
 #include "raylib.h"
 
 #include <math.h>
@@ -33,7 +35,7 @@ typedef struct {
     float trace_width;
     char path[PATH_SIZE], input[PATH_SIZE], message[256];
     double message_until;
-    bool learning, lesson_passed;
+    bool learning, lesson_passed, lesson_feedback_checked;
     int lesson_step;
     PcbBoard lesson_checked;
     char lesson_feedback[256];
@@ -50,6 +52,35 @@ static const Color accent = {247, 192, 86, 255};
 static const Color copper = {239, 133, 100, 255};
 static const Color silk = {182, 214, 202, 255};
 static const Color selected = {100, 215, 236, 255};
+
+static void draw_text(const char *copy, int x, int y, int size, Color color)
+{
+    ui_text(tr(copy), x, y, size, color);
+}
+
+static int text_width(const char *copy, int size)
+{
+    return ui_text_width(tr(copy), size);
+}
+
+static int fit_text_size(const char *copy, int size, int width)
+{
+    while (size > 10 && text_width(copy, size) > width) --size;
+    return size;
+}
+
+static void switch_language(void)
+{
+    i18n_set_language(i18n_language() == LANGUAGE_ENGLISH ? LANGUAGE_INDONESIAN : LANGUAGE_ENGLISH);
+    SetWindowTitle(tr("PCBEE - PCB layout editor"));
+    /* Feedback is kept as English copy until it is drawn. Recheck generated
+       feedback so format placeholders and part names use the new language. */
+    if (app.learning && app.lesson_feedback_checked) {
+        bool passed = learn_check(&app.lesson_checked, app.lesson_step,
+                                  app.lesson_feedback, sizeof(app.lesson_feedback));
+        (void)passed;
+    }
+}
 
 static Rectangle canvas(void)
 {
@@ -147,6 +178,7 @@ static void lesson_step(int step)
     app.lesson_step = step;
     app.lesson_passed = false;
     app.lesson_feedback[0] = '\0';
+    app.lesson_feedback_checked = false;
     if (step >= 1 && step <= 3) {
         app.footprint = learn_targets[step - 1].type;
         app.rotation = 0;
@@ -189,6 +221,7 @@ static void check_lesson(void)
     app.lesson_passed = learn_check(&app.board, app.lesson_step,
                                    app.lesson_feedback, sizeof(app.lesson_feedback));
     app.lesson_checked = app.board;
+    app.lesson_feedback_checked = true;
 }
 
 static void update_lesson(void)
@@ -196,6 +229,7 @@ static void update_lesson(void)
     if (app.learning && app.lesson_passed && app.lesson_step > 0 &&
         memcmp(&app.board, &app.lesson_checked, sizeof(PcbBoard)) != 0) {
         app.lesson_passed = false;
+        app.lesson_feedback_checked = false;
         snprintf(app.lesson_feedback, sizeof(app.lesson_feedback),
                  "Board changed. Check this step again before continuing.");
     }
@@ -226,9 +260,10 @@ static bool button(Rectangle rect, const char *label, bool active, bool enabled)
 {
     bool hover = enabled && CheckCollisionPointRec(GetMousePosition(), rect);
     DrawRectangleRounded(rect, 0.18f, 4, active && enabled ? accent : hover ? border : raised);
-    int width = MeasureText(label, 16);
-    DrawText(label, (int)(rect.x + (rect.width - width) / 2), (int)(rect.y + (rect.height - 16) / 2),
-             16, active && enabled ? background : enabled ? text : muted);
+    int size = fit_text_size(label, 16, (int)rect.width - 12);
+    int width = text_width(label, size);
+    draw_text(label, (int)(rect.x + (rect.width - width) / 2), (int)(rect.y + (rect.height - size) / 2),
+              size, active && enabled ? background : enabled ? text : muted);
     return hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
 
@@ -279,7 +314,7 @@ static void draw_component(const PcbComponent *component, Color color, bool high
         Vector2 center = screen_point(component->position);
         float height = component->rotation % 180 ? info->body_width : info->body_height;
         const char *label = TextFormat("%s%d", info->prefix, component->id);
-        DrawText(label, (int)(center.x - MeasureText(label, 14) / 2),
+        draw_text(label, (int)(center.x - text_width(label, 14) / 2),
                  (int)(center.y - height * zoom / 2 - 19), 14, outline);
     }
     if (highlight) {
@@ -292,9 +327,9 @@ static void lesson_marker(PcbPoint point, const char *label, Color color)
 {
     Vector2 p = screen_point(point);
     DrawCircleLines((int)p.x, (int)p.y, fmaxf(8, 1.3f * app.camera.zoom), color);
-    int width = MeasureText(label, 12);
+    int width = text_width(label, 12);
     DrawRectangle((int)p.x - width / 2 - 4, (int)p.y - 30, width + 8, 18, panel);
-    DrawText(label, (int)p.x - width / 2, (int)p.y - 27, 12, color);
+    draw_text(label, (int)p.x - width / 2, (int)p.y - 27, 12, color);
 }
 
 static void draw_lesson_hints(void)
@@ -308,8 +343,8 @@ static void draw_lesson_hints(void)
         DrawCircleLines((int)p.x, (int)p.y, 7, selected);
         DrawLine((int)p.x - 12, (int)p.y, (int)p.x + 12, (int)p.y, selected);
         DrawLine((int)p.x, (int)p.y - 12, (int)p.x, (int)p.y + 12, selected);
-        const char *label = TextFormat("TARGET: %s / %d deg", pcb_footprint(target->type)->name, target->rotation);
-        DrawText(label, (int)p.x - MeasureText(label, 12) / 2, (int)p.y + 45, 12, selected);
+        const char *label = TextFormat(tr("TARGET: %s / %d deg"), tr(pcb_footprint(target->type)->name), target->rotation);
+        draw_text(label, (int)p.x - text_width(label, 12) / 2, (int)p.y + 45, 12, selected);
     } else if (step >= 4 && step <= 6) {
         PcbPoint a, b;
         learn_net_ends(step - 4, &a, &b);
@@ -539,24 +574,25 @@ static void draw_board(void)
             }
         }
     }
-    DrawRectangleRounded((Rectangle){area.x + 22, area.y + 18, 142, 27}, 0.3f, 4, panel);
+    DrawRectangleRounded((Rectangle){area.x + 22, area.y + 18, 160, 27}, 0.3f, 4, panel);
     DrawCircle((int)area.x + 36, (int)area.y + 31, 4, copper);
-    DrawText("TOP COPPER", (int)area.x + 48, (int)area.y + 25, 12, text);
+    draw_text("TOP COPPER", (int)area.x + 48, (int)area.y + 25, 12, text);
     const char *size = TextFormat("%.1f x %.1f mm", app.board.width, app.board.height);
-    DrawText(size, (int)(area.x + area.width - MeasureText(size, 14) - 22), (int)area.y + 25, 14, muted);
+    draw_text(size, (int)(area.x + area.width - text_width(size, 14) - 22), (int)area.y + 25, 14, muted);
     const char *hint = app.tool == TOOL_PLACE ? "Click to place  /  R to rotate  /  Esc to select" :
         app.tool == TOOL_ROUTE ? "Click to route  /  Right-click or Enter to finish" :
         "Drag to move  /  Scroll to zoom  /  Space + drag to pan";
-    int hint_width = MeasureText(hint, 14);
+    int hint_size = fit_text_size(hint, 14, (int)area.width - 40);
+    int hint_width = text_width(hint, hint_size);
     int hint_x = (int)(area.x + (area.width - hint_width) / 2);
     DrawRectangleRounded((Rectangle){hint_x - 14, area.y + area.height - 42, hint_width + 28, 28}, 0.25f, 4, panel);
-    DrawText(hint, hint_x, (int)(area.y + area.height - 35), 14, muted);
+    draw_text(hint, hint_x, (int)(area.y + area.height - 35), hint_size, muted);
     if (!app.learning && app.board.component_count == 0 && app.board.trace_count == 0 && app.tool == TOOL_SELECT) {
         Vector2 center = screen_point((PcbPoint){app.board.width / 2, app.board.height / 2});
         const char *title = "Your next circuit starts here";
-        DrawText(title, (int)center.x - MeasureText(title, 22) / 2, (int)center.y - 22, 22, silk);
+        draw_text(title, (int)center.x - text_width(title, 22) / 2, (int)center.y - 22, 22, silk);
         const char *subtitle = "Choose a footprint from the left to place it.";
-        DrawText(subtitle, (int)center.x - MeasureText(subtitle, 16) / 2, (int)center.y + 12, 16, muted);
+        draw_text(subtitle, (int)center.x - text_width(subtitle, 16) / 2, (int)center.y + 12, 16, muted);
     }
     EndScissorMode();
 }
@@ -568,8 +604,8 @@ static void draw_toolbar(void)
     DrawLine(0, HEADER - 1, GetScreenWidth(), HEADER - 1, border);
     DrawPoly((Vector2){32, 36}, 6, 14, 30, accent);
     DrawCircle(32, 36, 5, background);
-    DrawText("PCBEE", 55, 19, 26, text);
-    DrawText("PCB LAYOUT / v" PCBEE_VERSION, 56, 49, 10, muted);
+    draw_text("PCBEE", 55, 19, 26, text);
+    draw_text(TextFormat(tr("PCB LAYOUT / v%s"), PCBEE_VERSION), 56, 49, 10, muted);
     float x = SIDEBAR + 20;
     if (button((Rectangle){x, 22, 62, 32}, "New", false, enabled)) request_new();
     if (button((Rectangle){x + 70, 22, 62, 32}, "Open", false, enabled)) request_open();
@@ -582,25 +618,29 @@ static void draw_toolbar(void)
         if (app.learning) leave_lesson();
         else open_modal(MODAL_LEARN_START);
     }
-    DrawText(dirty() ? "UNSAVED" : "SAVED", GetScreenWidth() - 105, 33, 13, dirty() ? accent : muted);
+    if (button((Rectangle){GetScreenWidth() - 160.0f, 10, 142, 28},
+               i18n_language() == LANGUAGE_ENGLISH ? "EN / Indonesia" : "ID / English", false, enabled)) switch_language();
+    const char *status = dirty() ? "UNSAVED" : "SAVED";
+    draw_text(status, GetScreenWidth() - 89 - text_width(status, 11) / 2, 48, 11, dirty() ? accent : muted);
 }
 
-/* The built-in font uses ASCII lesson copy. Wrap at words within the panel. */
+/* Translate whole paragraphs before wrapping; both UI languages use Latin text. */
 static int wrapped_text(const char *copy, int x, int y, int width, int font, Color color)
 {
+    copy = tr(copy);
     while (*copy) {
         char line[256];
         int count = 0, space = -1;
         while (copy[count] && copy[count] != '\n' && count < (int)sizeof(line) - 1) {
             line[count] = copy[count];
             line[count + 1] = '\0';
-            if (MeasureText(line, font) > width && count > 0) break;
+            if (ui_text_width(line, font) > width && count > 0) break;
             if (copy[count] == ' ') space = count;
             ++count;
         }
         if (copy[count] && copy[count] != '\n' && space > 0) count = space;
         line[count] = '\0';
-        DrawText(line, x, y, font, color);
+        ui_text(line, x, y, font, color);
         y += font + 5;
         copy += count;
         while (*copy == ' ') ++copy;
@@ -642,12 +682,12 @@ static void draw_lesson_panel(void)
     int bottom = GetScreenHeight() - FOOTER;
     DrawRectangle(left, HEADER, LESSON_PANEL, bottom - HEADER, panel);
     DrawLine(left, HEADER, left, bottom, border);
-    DrawText(TextFormat("LED LAB / STEP %d OF %d", step + 1, LEARN_STEPS), x, HEADER + 20, 12, accent);
-    DrawText(titles[step], x, HEADER + 46, 21, text);
+    draw_text(TextFormat(tr("LED LAB / STEP %d OF %d"), step + 1, LEARN_STEPS), x, HEADER + 20, 12, accent);
+    draw_text(titles[step], x, HEADER + 46, fit_text_size(titles[step], 21, width), text);
     for (int i = 0; i < LEARN_STEPS; ++i)
         DrawRectangle(x + i * 34, HEADER + 80, 28, 4, i <= step ? accent : border);
     wrapped_text(concepts[step], x, HEADER + 104, width, 15, text);
-    DrawText("YOUR TASK", x, HEADER + 232, 12, selected);
+    draw_text("YOUR TASK", x, HEADER + 232, 12, selected);
     wrapped_text(tasks[step], x, HEADER + 254, width, 14, muted);
     if (step == 0) {
         const char *answers[] = {"68 ohm", "680 ohm", "6.8k ohm"};
@@ -655,6 +695,7 @@ static void draw_lesson_panel(void)
             if (button((Rectangle){x + i * 92.0f, HEADER + 286, 84, 34}, answers[i],
                        app.lesson_passed && i == 1, enabled)) {
                 app.lesson_passed = i == 1;
+                app.lesson_feedback_checked = false;
                 app.lesson_checked = app.board;
                 snprintf(app.lesson_feedback, sizeof(app.lesson_feedback), "%s", i == 1 ?
                          "Correct! (5 - 2) / 680 = 0.0044 A, or 4.4 mA. Now build the layout." :
@@ -690,10 +731,10 @@ static void draw_sidebar(void)
     bool enabled = app.modal == MODAL_NONE;
     DrawRectangle(0, HEADER, SIDEBAR, GetScreenHeight() - HEADER - FOOTER, panel);
     DrawLine(SIDEBAR - 1, HEADER, SIDEBAR - 1, GetScreenHeight() - FOOTER, border);
-    DrawText("TOOLS", 20, 97, 12, muted);
+    draw_text("TOOLS", 20, 97, 12, muted);
     if (button((Rectangle){16, 122, 94, 36}, "Select  1", app.tool == TOOL_SELECT, enabled)) set_tool(TOOL_SELECT);
     if (button((Rectangle){118, 122, 94, 36}, "Route  2", app.tool == TOOL_ROUTE, enabled)) set_tool(TOOL_ROUTE);
-    DrawText("FOOTPRINTS", 20, 184, 12, muted);
+    draw_text("FOOTPRINTS", 20, 184, 12, muted);
     for (int i = 0; i < PCB_FOOTPRINT_COUNT; ++i) {
         const PcbFootprintInfo *info = pcb_footprint((PcbFootprint)i);
         Rectangle rect = {16, 208 + i * 57.0f, 196, 49};
@@ -701,27 +742,27 @@ static void draw_sidebar(void)
         bool hover = enabled && CheckCollisionPointRec(GetMousePosition(), rect);
         DrawRectangleRounded(rect, 0.15f, 4, active ? (Color){58, 53, 39, 255} : hover ? border : raised);
         if (active) DrawRectangle((int)rect.x, (int)rect.y + 7, 3, 35, accent);
-        DrawText(info->name, 29, (int)rect.y + 8, 17, active ? accent : text);
-        DrawText(info->description, 29, (int)rect.y + 30, 10, muted);
+        draw_text(info->name, 29, (int)rect.y + 8, 17, active ? accent : text);
+        draw_text(info->description, 29, (int)rect.y + 30, 10, muted);
         if (hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             set_tool(TOOL_PLACE);
             app.footprint = (PcbFootprint)i;
             app.rotation = 0;
         }
     }
-    DrawText("TRACE WIDTH / mm", 20, 514, 12, muted);
+    draw_text("TRACE WIDTH / mm", 20, 514, 12, muted);
     const float widths[] = {0.4f, 0.6f, 1.0f};
     for (int i = 0; i < 3; ++i) {
         if (button((Rectangle){16 + i * 68.0f, 539, 60, 30}, TextFormat("%.1f", widths[i]),
                    app.trace_width == widths[i], enabled)) app.trace_width = widths[i];
     }
     DrawLine(16, 590, 212, 590, border);
-    DrawText(TextFormat("%d components", app.board.component_count), 20, 607, 15, text);
-    DrawText(TextFormat("%d trace segments", app.board.trace_count), 20, 631, 15, text);
+    draw_text(TextFormat(tr("%d components"), app.board.component_count), 20, 607, 15, text);
+    draw_text(TextFormat(tr("%d trace segments"), app.board.trace_count), 20, 631, 15, text);
     if (GetScreenHeight() >= 780) {
-        DrawText("R    Rotate footprint", 20, GetScreenHeight() - 101, 12, muted);
-        DrawText("Del  Delete selection", 20, GetScreenHeight() - 80, 12, muted);
-        DrawText("F1   All shortcuts", 20, GetScreenHeight() - 59, 12, muted);
+        draw_text("R    Rotate footprint", 20, GetScreenHeight() - 101, 12, muted);
+        draw_text("Del  Delete selection", 20, GetScreenHeight() - 80, 12, muted);
+        draw_text("F1   All shortcuts", 20, GetScreenHeight() - 59, 12, muted);
     }
 }
 
@@ -732,10 +773,11 @@ static void draw_status(void)
     DrawLine(0, y, GetScreenWidth(), y, border);
     const char *status = GetTime() < app.message_until ? app.message : app.path;
     BeginScissorMode(0, y, GetScreenWidth() - 380, FOOTER);
-    DrawText(status, 18, y + 11, 12, GetTime() < app.message_until ? accent : muted);
+    ui_text(GetTime() < app.message_until ? tr(status) : status, 18, y + 11, 12,
+            GetTime() < app.message_until ? accent : muted);
     EndScissorMode();
     PcbPoint p = pcb_snap(world_point(GetMousePosition()));
-    DrawText(TextFormat("X %6.2f   Y %6.2f mm  |  Grid 1.27 mm", p.x, p.y),
+    draw_text(TextFormat(tr("X %6.2f   Y %6.2f mm  |  Grid 1.27 mm"), p.x, p.y),
              GetScreenWidth() - 358, y + 11, 12, muted);
 }
 
@@ -746,7 +788,10 @@ static void submit_path(void)
     bool saving = app.modal == MODAL_SAVE;
     bool ok = saving ? pcb_save(&app.board, app.input, error, sizeof(error)) :
                        pcb_load(&app.board, app.input, error, sizeof(error));
-    if (!ok) { notify(error); return; }
+    if (!ok) {
+        notify(TextFormat(tr(saving ? "Could not save project: %s" : "Could not open project: %s"), tr(error)));
+        return;
+    }
     snprintf(app.path, sizeof(app.path), "%s", app.input);
     app.saved = app.board;
     if (!saving) {
@@ -772,7 +817,7 @@ static void draw_modal(void)
     const char *title = help ? "A small workbench for your next idea." :
         learn ? "Learn PCB design: LED lab" :
         path ? (app.modal == MODAL_SAVE ? "Save project" : "Open project") : "Unsaved changes";
-    DrawText(title, (int)x + 28, (int)y + 25, 24, text);
+    draw_text(title, (int)x + 28, (int)y + 25, fit_text_size(title, 24, (int)width - 56), text);
     if (help) {
         const char *lines[] = {
             "1 / V                 Select; drag a footprint to move it",
@@ -785,10 +830,11 @@ static void draw_modal(void)
             "Esc / Right-click     Cancel placement or finish a route",
             "Ctrl/Cmd + S / O / N  Save / open / new project",
             "Ctrl/Cmd + Z          Undo (Shift + Z or Ctrl + Y to redo)",
-            "F2 / Learn PCB        Start or close the interactive LED lesson"
+            "F2 / Learn PCB        Start or close the interactive LED lesson",
+            "F3                    Switch English / Bahasa Indonesia"
         };
-        for (int i = 0; i < 11; ++i) DrawText(lines[i], (int)x + 28, (int)y + 74 + i * 27, 14, muted);
-        DrawText("Layout prototype: no netlist, general DRC, or manufacturing export.",
+        for (int i = 0; i < 12; ++i) draw_text(lines[i], (int)x + 28, (int)y + 74 + i * 25, 14, muted);
+        draw_text("Layout prototype: no netlist, general DRC, or manufacturing export.",
                  (int)x + 28, (int)y + 387, 14, accent);
         if (button((Rectangle){x + width - 116, y + height - 58, 88, 34}, "Got it", true, true) ||
             IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_ENTER)) app.modal = MODAL_NONE;
@@ -804,7 +850,7 @@ static void draw_modal(void)
         if (button((Rectangle){x + width - 156, y + height - 58, 128, 34},
                    dirty() ? "Discard & start" : "Start lesson", true, true)) start_lesson();
     } else if (path) {
-        DrawText("Project file path (.pcb). Relative paths use the working directory.",
+        draw_text("Project file path (.pcb). Relative paths use the working directory.",
                  (int)x + 28, (int)y + 65, 14, muted);
         int ch;
         while ((ch = GetCharPressed()) != 0) {
@@ -833,16 +879,16 @@ static void draw_modal(void)
         DrawRectangleRounded((Rectangle){x + 28, y + 96, width - 56, 43}, 0.1f, 4, background);
         DrawRectangleLinesEx((Rectangle){x + 28, y + 96, width - 56, 43}, 1, accent);
         const char *visible = app.input;
-        while (*visible && MeasureText(visible, 18) > width - 82) {
+        while (*visible && ui_text_width(visible, 18) > width - 82) {
             ++visible;
             while (((unsigned char)*visible & 0xc0) == 0x80) ++visible;
         }
-        DrawText(visible, (int)x + 40, (int)y + 109, 18, text);
+        ui_text(visible, (int)x + 40, (int)y + 109, 18, text);
         if (GetTime() < app.message_until) {
             BeginScissorMode((int)x + 28, (int)y + 146, (int)width - 56, 22);
-            DrawText(app.message, (int)x + 28, (int)y + 148, 13, accent);
+            draw_text(app.message, (int)x + 28, (int)y + 148, 13, accent);
             EndScissorMode();
-        } else DrawText("Ctrl/Cmd + A clears the path; Ctrl/Cmd + V pastes a path.",
+        } else draw_text("Ctrl/Cmd + A clears the path; Ctrl/Cmd + V pastes a path.",
                         (int)x + 28, (int)y + 148, 12, muted);
         if (button((Rectangle){x + width - 214, y + height - 58, 88, 34}, "Cancel", false, true) ||
             IsKeyPressed(KEY_ESCAPE)) app.modal = MODAL_NONE;
@@ -851,9 +897,9 @@ static void draw_modal(void)
             if (app.modal != MODAL_NONE) submit_path();
         }
     } else {
-        DrawText("This board has unsaved edits. Discard them to continue?",
+        draw_text("This board has unsaved edits. Discard them to continue?",
                  (int)x + 28, (int)y + 82, 17, muted);
-        DrawText("Cancel, then Save to keep your work.", (int)x + 28, (int)y + 114, 15, muted);
+        draw_text("Cancel, then Save to keep your work.", (int)x + 28, (int)y + 114, 15, muted);
         if (button((Rectangle){x + width - 238, y + height - 58, 88, 34}, "Cancel", false, true) ||
             IsKeyPressed(KEY_ESCAPE)) app.modal = MODAL_NONE;
         if (button((Rectangle){x + width - 140, y + height - 58, 112, 34}, "Discard", true, true)) {
@@ -904,6 +950,8 @@ int main(int argc, char **argv)
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
     InitWindow(1280, 820, "PCBEE - PCB layout editor");
     if (!IsWindowReady()) return 1;
+    bool font_loaded = ui_load_font();
+    if (smoke && !font_loaded) { CloseWindow(); return 1; }
     SetWindowMinSize(1060, 720);
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
@@ -916,6 +964,7 @@ int main(int argc, char **argv)
             else app.running = false;
         }
         if (!app.running) break;
+        if (IsKeyPressed(KEY_F3)) switch_language();
         if (IsWindowResized()) {
             Rectangle area = canvas();
             app.camera.offset = (Vector2){area.x + area.width / 2, area.y + area.height / 2};
@@ -936,6 +985,7 @@ int main(int argc, char **argv)
         EndDrawing();
         if (smoke && ++frames >= 3) app.running = false;
     }
+    ui_unload_font();
     CloseWindow();
     if (smoke && frames < 3) return 1;
     if (smoke) puts("PCBEE desktop smoke test passed (3 rendered frames).");

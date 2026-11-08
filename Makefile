@@ -30,8 +30,8 @@ $(RAYLIB): $(RAYLIB_DIR)/src/Makefile
 build:
 	mkdir -p build
 
-$(APP): src/main.c src/pcb.c src/pcb.h src/learn.c src/learn.h $(RAYLIB) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) src/main.c src/pcb.c src/learn.c $(RAYLIB) $(LDFLAGS) $(LDLIBS) -o $@
+$(APP): src/main.c src/pcb.c src/pcb.h src/learn.c src/learn.h src/i18n.c src/i18n.h src/ui.c src/ui.h src/font_data.c assets/fonts/IBMPlexMono-Regular.ttf $(RAYLIB) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) src/main.c src/pcb.c src/learn.c src/i18n.c src/ui.c src/font_data.c $(RAYLIB) $(LDFLAGS) $(LDLIBS) -o $@
 
 run: $(APP)
 	./$(APP)
@@ -39,8 +39,8 @@ run: $(APP)
 build/test_pcb: tests/test_pcb.c src/pcb.c src/pcb.h | build
 	$(CC) -Isrc $(CFLAGS) tests/test_pcb.c src/pcb.c -lm -o $@
 
-build/test_learn: tests/test_learn.c src/learn.c src/learn.h src/pcb.c src/pcb.h | build
-	$(CC) -Isrc $(CFLAGS) tests/test_learn.c src/learn.c src/pcb.c -lm -o $@
+build/test_learn: tests/test_learn.c src/learn.c src/learn.h src/pcb.c src/pcb.h src/i18n.c src/i18n.h | build
+	$(CC) -Isrc $(CFLAGS) tests/test_learn.c src/learn.c src/pcb.c src/i18n.c -lm -o $@
 
 test: build/test_pcb build/test_learn
 	./build/test_pcb
@@ -49,7 +49,7 @@ test: build/test_pcb build/test_learn
 sanitize: | build
 	$(CC) -Isrc -std=c99 -Wall -Wextra -Wpedantic -g -fsanitize=address,undefined tests/test_pcb.c src/pcb.c -lm -o build/test_pcb_sanitize
 	./build/test_pcb_sanitize
-	$(CC) -Isrc -std=c99 -Wall -Wextra -Wpedantic -g -fsanitize=address,undefined tests/test_learn.c src/learn.c src/pcb.c -lm -o build/test_learn_sanitize
+	$(CC) -Isrc -std=c99 -Wall -Wextra -Wpedantic -g -fsanitize=address,undefined tests/test_learn.c src/learn.c src/pcb.c src/i18n.c -lm -o build/test_learn_sanitize
 	./build/test_learn_sanitize
 
 clean:

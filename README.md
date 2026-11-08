@@ -2,6 +2,8 @@
 
 A lightweight desktop PCB layout editor written in **C99**, using [raylib 5.5](https://www.raylib.com/) for its window, drawing, and input. Version **0.2.0** adds cross-platform builds and packaging to the working through-hole placement and copper-routing editor.
 
+The editor uses the bundled **IBM Plex Mono** monospace font. Use the **EN / Indonesia** button at the upper right (or press **F3**) to switch the interface and interactive lesson between English and Bahasa Indonesia at any time. Switching does not change your board or lesson progress; the selected language lasts for the current session. The font and its [SIL Open Font License](assets/fonts/OFL.txt) are included in desktop packages.
+
 ## Learn PCB design
 
 New to designing circuit boards? Start with the [PCB design guide](PCB_DESIGN_GUIDE.md): learn the terminology, calculate a simple LED circuit, practice placement and routing in PCBEE, and follow the steps toward a manufactured board. The guide includes review checklists, exercises, and further learning resources, and is bundled with desktop packages for offline reading.
@@ -149,6 +151,7 @@ The default board is **101.6 × 76.2 mm**, with a **1.27 mm snap grid**. The vis
 | Redo | `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y` |
 | Help | `F1` |
 | Start / exit interactive learning | `F2` or **Learn PCB** |
+| Switch English / Bahasa Indonesia | `F3` or the language button in the upper right |
 
 Save/Open use a simple UTF-8 path-entry dialog. Relative paths resolve from the directory you launched the app in. `Ctrl/Cmd + A` clears the field, and `Ctrl/Cmd + V` replaces it with a pasted path. Backspace removes one complete Unicode code point; the built-in font may display unsupported glyphs as `?`, but the path is preserved. Saving to an existing path replaces that project on all three platforms. New, Open, and closing the window prompt before discarding unsaved edits.
 
@@ -172,6 +175,9 @@ src/pcb.h          Board types, capacities, and model API
 src/pcb.c          Geometry, routing, history, project persistence
 src/learn.h        Fixed LED lesson targets and checking API
 src/learn.c        Lesson placement and copper-connectivity checks
+src/i18n.c         English / Indonesian interface and lesson text
+src/ui.c           Monospace text rendering
+src/font_data.c    Bundled font loading across platforms
 src/main.c         Desktop UI, rendering, and input
 src/windows_entry.c Windows GUI entry point and UTF-8 command-line conversion
 tests/test_pcb.c   Model/persistence regression tests (no graphics required)

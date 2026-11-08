@@ -1,4 +1,5 @@
 #include "learn.h"
+#include "i18n.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -90,24 +91,24 @@ static void join(int *parents, int a, int b)
 bool learn_check(const PcbBoard *board, int step, char *feedback, size_t size)
 {
     if (step < 1 || step >= LEARN_STEPS) {
-        snprintf(feedback, size, "Answer the resistor question first.");
+        snprintf(feedback, size, "%s", tr("Answer the resistor question first."));
         return false;
     }
     int required = step < 3 ? step : 3;
     for (int i = 0; i < required; ++i) {
         if (!learn_placed(board, i)) {
-            snprintf(feedback, size, "Place exactly one %s on its target at %.2f, %.2f mm, rotated %d degrees. Use Select to move it; R rotates.",
-                     pcb_footprint(learn_targets[i].type)->name, learn_targets[i].position.x,
+            snprintf(feedback, size, tr("Place exactly one %s on its target at %.2f, %.2f mm, rotated %d degrees. Use Select to move it; R rotates."),
+                     tr(pcb_footprint(learn_targets[i].type)->name), learn_targets[i].position.x,
                      learn_targets[i].position.y, learn_targets[i].rotation);
             return false;
         }
     }
     if (step <= 3) {
-        snprintf(feedback, size, "Placement checked! The square pad marks pad 1. Continue when ready.");
+        snprintf(feedback, size, "%s", tr("Placement checked! The square pad marks pad 1. Continue when ready."));
         return true;
     }
     if (board->component_count != LEARN_PARTS) {
-        snprintf(feedback, size, "Remove extra components. This lesson uses one header, one resistor, and one LED.");
+        snprintf(feedback, size, "%s", tr("Remove extra components. This lesson uses one header, one resistor, and one LED."));
         return false;
     }
     /* Each copper shape is a node; touching shapes share a connected set.
@@ -127,7 +128,7 @@ bool learn_check(const PcbBoard *board, int step, char *feedback, size_t size)
     for (int a = 0; a < 8; ++a) {
         for (int b = a + 1; b < 8; ++b) {
             if (pad_nets[a] != pad_nets[b] && root(parents, a) == root(parents, b)) {
-                snprintf(feedback, size, "Unintended copper connection! Separate the three nets and keep header pads 3/4 isolated. Check crossings and pad edges.");
+                snprintf(feedback, size, "%s", tr("Unintended copper connection! Separate the three nets and keep header pads 3/4 isolated. Check crossings and pad edges."));
                 return false;
             }
         }
@@ -135,7 +136,7 @@ bool learn_check(const PcbBoard *board, int step, char *feedback, size_t size)
     int nets = step < 7 ? step - 3 : 3;
     for (int i = 0; i < nets; ++i) {
         if (root(parents, net_pads[i][0]) != root(parents, net_pads[i][1])) {
-            snprintf(feedback, size, "%s is incomplete. Join its highlighted pads with continuous copper. Check gaps and finish each route with Enter.", learn_net_names[i]);
+            snprintf(feedback, size, tr("%s is incomplete. Join its highlighted pads with continuous copper. Check gaps and finish each route with Enter."), tr(learn_net_names[i]));
             return false;
         }
     }
@@ -145,13 +146,13 @@ bool learn_check(const PcbBoard *board, int step, char *feedback, size_t size)
             for (int p = 0; p < 3; ++p)
                 attached = attached || root(parents, 8 + i) == root(parents, net_pads[p][0]);
             if (!attached) {
-                snprintf(feedback, size, "Remove stray copper: every trace must belong to one of the three intended nets.");
+                snprintf(feedback, size, "%s", tr("Remove stray copper: every trace must belong to one of the three intended nets."));
                 return false;
             }
         }
     }
-    snprintf(feedback, size, step == 7 ?
+    snprintf(feedback, size, "%s", tr(step == 7 ?
              "Lesson complete! All three connections are present and separate. Save your practice board. Manufacturing still needs a full CAD review." :
-             "Connection checked! Copper is continuous and the lesson nets stay separate. Continue when ready.");
+             "Connection checked! Copper is continuous and the lesson nets stay separate. Continue when ready."));
     return true;
 }
