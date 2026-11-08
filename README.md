@@ -129,7 +129,8 @@ update the compilation database path in your editor configuration.
 3. Choose **Route**, click a pad, then click another pad or a waypoint. The preview uses 45°/90° segments and snaps to nearby pads and trace endpoints.
 4. Right-click or press **Enter** to finish the route. Already placed segments stay on the board.
 5. Choose **Select** to select or drag a footprint. Select a trace segment or footprint and press **Delete** to remove it.
-6. Click **Save**, enter a file path, and confirm. Use **Open** to load it later.
+6. With a footprint selected, use **Zoom + / Zoom -** at the bottom of the sidebar to center and zoom on it, or **Rename** to edit its label.
+7. Click **Save**, enter a file path, and confirm. Use **Open** to load it later. **Export** generates fabrication layers from the current board.
 
 The default board is **101.6 × 76.2 mm**, with a **1.27 mm snap grid**. The visible grid becomes coarser when zoomed out; snapping remains 1.27 mm. Pad diameter is 1.8 mm with a 0.8 mm drill visualization. Trace width can be 0.4, 0.6, or 1.0 mm.
 
@@ -144,6 +145,9 @@ The default board is **101.6 × 76.2 mm**, with a **1.27 mm snap grid**. The vis
 | Finish route | Right-click, `Enter`, or `Esc` |
 | Cancel a move / exit placement | `Esc` |
 | Zoom around pointer | Scroll / trackpad scroll |
+| Zoom on selected component | **Zoom + / Zoom -** in sidebar, `+` / `-`, or keypad `+` / `-` |
+| Rename selected component | **Rename** in sidebar or `N` |
+| Export Gerber and drill files | **Export** in sidebar or `E` |
 | Pan | Middle-button drag or `Space` + left-drag |
 | Fit board | `F` |
 | New / open / save | `Ctrl/Cmd + N / O / S` |
@@ -153,18 +157,36 @@ The default board is **101.6 × 76.2 mm**, with a **1.27 mm snap grid**. The vis
 | Start / exit interactive learning | `F2` or **Learn PCB** |
 | Switch English / Bahasa Indonesia | `F3` or the language button in the upper right |
 
-Save/Open use a simple UTF-8 path-entry dialog. Relative paths resolve from the directory you launched the app in. `Ctrl/Cmd + A` clears the field, and `Ctrl/Cmd + V` replaces it with a pasted path. Backspace removes one complete Unicode code point; the built-in font may display unsupported glyphs as `?`, but the path is preserved. Saving to an existing path replaces that project on all three platforms. New, Open, and closing the window prompt before discarding unsaved edits.
+Save/Open use a simple UTF-8 path-entry dialog. Relative paths resolve from the directory you launched the app in. `Ctrl/Cmd + A` clears the field, and `Ctrl/Cmd + V` replaces it with a pasted path. Backspace removes one complete Unicode code point; the bundled font may display unsupported glyphs as `?`, but the path is preserved. Saving to an existing path replaces that project on all three platforms. New, Open, and closing the window prompt before discarding unsaved edits.
+
+### Component labels and fabrication export
+
+Select a footprint, then click **Rename** or press **N**. Enter a unique label of 1–16 ASCII letters, digits, underscores, or hyphens (e.g. `POWER_LED`); names are case-insensitively unique. Labels are shown on the board, saved in the `.pcb` project, included in undo/redo, and drawn as tiny dots on the top silkscreen Gerber where they fit without touching pad openings. Old version-1 projects load with their original generated names; new saves use project format version 2. IDs remain stable when you rename a component.
+
+Select **Export** or press **E**, and enter an output *prefix* (not a `.pcb` filename). For example, `my-board` writes these seven files beside the chosen prefix; relative prefixes use the launch directory:
+
+| File | Contents |
+| --- | --- |
+| `my-board-F_Cu.gbr` | Top copper traces and through-hole pads |
+| `my-board-B_Cu.gbr` | Bottom copper pads for plated through-holes; no bottom routing |
+| `my-board-F_Mask.gbr` / `my-board-B_Mask.gbr` | Solder-mask openings around through-hole pads |
+| `my-board-F_SilkS.gbr` | Component labels (no footprint body graphics) |
+| `my-board-Edge_Cuts.gbr` | Closed rectangular board outline |
+| `my-board-PTH.drl` | 0.8 mm plated through-hole drill positions |
+
+Gerbers use millimeters and 4.6 fixed coordinates; the drill file uses millimeters with explicit decimals. Coordinates are viewed from the top and flipped vertically from the app's screen coordinates. Pads are 1.8 mm across and mask openings 1.9 mm. Export requires at least 0.25 mm copper/mask-to-board-edge clearance but **does not** perform electrical, netlist, short-circuit, spacing between copper features, silkscreen legibility, or manufacturer-specific checks. Preview **all seven files together in a Gerber viewer**, confirm hole count/diameter, layer alignment, copper gaps and connections, and check your fabricator's capabilities and the real parts' footprints before ordering. Re-export the full set if an output error occurs; files are replaced individually. A `.pcb` project remains editable source, whereas Gerber/drill files are manufacturing geometry.
 
 ## Scope of this first version
 
-- One top-copper routing layer, board outline, and footprint/pad display.
-- Five built-in through-hole footprints; labels are generated from a unique component ID.
-- Placement, dragging, rotation, selection, and deletion.
+- One top-copper routing layer, board outline, and footprint/pad display. Export includes bottom pads for plated through-holes.
+- Five built-in through-hole footprints; editable unique component labels default to a generated ID.
+- Placement, dragging, rotation, selection, deletion, and selected-component zoom.
 - Manual 45°/90° routing with pad and endpoint snapping.
 - Up to **128 components**, **1,024 trace segments**, and **31 undo steps**.
-- Versioned, human-readable `.pcb` projects; validated loading leaves the current board intact on failure. Saving writes a temporary sibling file before renaming it over the destination.
+- Versioned, human-readable `.pcb` projects (format v2; v1 still loads); validated loading leaves the current board intact on failure. Saving writes a temporary sibling file before renaming it over the destination.
+- RS-274X Gerber copper, mask, silkscreen, outline, and Excellon plated-hole export.
 
-This is a **layout prototype**, not a manufacturing-ready CAD tool. It does not yet implement a schematic editor, nets/ratsnest, electrical or clearance checks, collision prevention, vias, copper pours, multiple copper layers, Gerber/drill export, or native file pickers. Traces are independent geometry: moving or deleting a footprint does not move or remove its traces. The example demonstrates layout editing, not a validated circuit. Board dimensions can be changed in the project file (10–1,000 mm); there is no board-size UI yet.
+This is a **layout prototype**, not a manufacturing-ready CAD tool. It does not yet implement a schematic editor, nets/ratsnest, electrical or clearance checks, collision prevention, vias, copper pours, bottom-layer routing, or native file pickers. Traces are independent geometry: moving or deleting a footprint does not move or remove its traces. The example demonstrates layout editing, not a validated circuit. Board dimensions can be changed in the project file (10–1,000 mm); there is no board-size UI yet.
 
 ## Memory and architecture
 
@@ -176,19 +198,21 @@ src/pcb.c          Geometry, routing, history, project persistence
 src/learn.h        Fixed LED lesson targets and checking API
 src/learn.c        Lesson placement and copper-connectivity checks
 src/i18n.c         English / Indonesian interface and lesson text
+src/export.c       Gerber and plated drill geometry exporter
 src/ui.c           Monospace text rendering
 src/font_data.c    Bundled font loading across platforms
 src/main.c         Desktop UI, rendering, and input
 src/windows_entry.c Windows GUI entry point and UTF-8 command-line conversion
 tests/test_pcb.c   Model/persistence regression tests (no graphics required)
 tests/test_learn.c Lesson progression, connectivity, and short-circuit regressions
+tests/test_export.c Gerber/drill coordinate and layer regressions
 tests/verify_package.py Archive, architecture, checksum, and packaged-app smoke test
 examples/demo.pcb  Example layout
 CMakeLists.txt     Portable builds, CTest, and CPack archives
 .github/workflows/build.yml Three-target CI and tagged releases
 ```
 
-The core is independent of raylib, making it a place to add net connectivity and design-rule checks. The UI uses raylib's built-in font and primitive shapes, with no external assets or UI framework.
+The core is independent of raylib, making it a place to add net connectivity and design-rule checks. The UI uses the bundled IBM Plex Mono font and raylib primitive shapes, with no UI framework.
 
 ## Checks
 

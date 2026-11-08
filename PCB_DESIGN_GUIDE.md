@@ -33,7 +33,7 @@ See the [README](README.md#build-and-run) to launch PCBEE and the [controls](REA
 
 PCBEE currently provides five through-hole footprints, placement and rotation, and manual routing on one top-copper layer. It is useful for practicing layout decisions and reviewing connections by hand.
 
-It does not yet have schematics, assigned nets, a general ratsnest, ERC/DRC, vias, copper pours, or manufacturing export. Normal editing allows copper to cross or touch without reporting a short. The interactive lesson provides connection hints and on-demand checks only for its fixed LED exercise. A saved `.pcb` project is an editable PCBEE layout, not a fabrication file. The bundled `examples/demo.pcb` demonstrates editing rather than a validated circuit.
+It does not yet have schematics, assigned nets, a general ratsnest, ERC/DRC, vias, copper pours, or bottom-layer routing. It can [export Gerber and drill geometry](README.md#component-labels-and-fabrication-export), but normal editing allows copper to cross or touch without reporting a short. The interactive lesson provides connection hints and on-demand checks only for its fixed LED exercise. A saved `.pcb` project is an editable PCBEE layout, not a fabrication file. The bundled `examples/demo.pcb` demonstrates editing rather than a validated circuit.
 
 ## 2. Plan the circuit before placing parts
 
@@ -134,14 +134,14 @@ Click **Save** or press **Ctrl/Cmd + S**, enter a path such as `led-practice.pcb
 
 ## 6. Take the design to a manufactured board
 
-To build this circuit, recreate it in a full PCB CAD tool such as [KiCad](https://www.kicad.org/). PCBEE currently has no direct KiCad or Gerber export.
+To build this circuit, recreate and verify it in a full PCB CAD tool such as [KiCad](https://www.kicad.org/); PCBEE does not directly export KiCad projects. PCBEE's Gerber export can reproduce its current layout geometry, but cannot verify the schematic, net connections, or manufacturing clearances.
 
 1. **Draw the schematic.** Assign component values, connector functions, and exact pin connections. Run ERC and resolve or explain each finding.
 2. **Assign verified footprints.** Check pad numbering, lead spacing, body size, polarity, and hole sizes against datasheets. A 1:1 printout can help check physical fit.
 3. **Set the board requirements.** Choose the outline, mounting holes, layer stack, and fabricator's trace, clearance, drill, and copper-to-edge rules before routing.
 4. **Place and route.** Transfer the schematic's nets into the board editor. Reuse the placement lessons from the exercise; consider soldering access when choosing which layer carries through-hole connections. On a two-layer design, a ground plane can help provide continuous return paths, but avoid routing that unnecessarily splits it.
 5. **Run DRC and inspect.** Resolve unintended shorts, clearance errors, unconnected nets, and outline issues. Check connector orientation and silkscreen polarity labels separately; DRC cannot prove the whole circuit works.
-6. **Export and review fabrication files.** Generate the copper, mask, silkscreen, outline, and drill files required by the manufacturer. Open them in a Gerber viewer and inspect every layer and hole. Keep a bill of materials (BOM) with exact parts for assembly.
+6. **Export and review fabrication files.** Generate the copper, mask, silkscreen, outline, and drill files required by the manufacturer. PCBEE's **Export** (`E`) writes seven such files for its fixed through-hole geometry; a full PCB CAD tool can provide verified nets, rules, and more manufacturing options. Open the files in a Gerber viewer and inspect every layer and hole. Keep a bill of materials (BOM) with exact parts for assembly.
 7. **Assemble and bring up the board.** Inspect solder joints and polarity, check for an unintended supply-to-ground short with power disconnected, then use a current-limited supply for initial power-up. Verify the supply voltage and LED operation against your calculations.
 
 ## 7. Keep learning

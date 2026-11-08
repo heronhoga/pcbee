@@ -32,7 +32,7 @@ static void test_placement(void)
             assert(pcb_component_fits(&board, &board.components[index]));
         }
     }
-    PcbComponent resistor = {1, PCB_RESISTOR, {25.4f, 25.4f}, 90};
+    PcbComponent resistor = {1, PCB_RESISTOR, {25.4f, 25.4f}, 90, "R1"};
     PcbPoint pad = pcb_pad_position(&resistor, 0);
     close_float(pad.x, 25.4f);
     close_float(pad.y, 21.59f);
@@ -40,6 +40,16 @@ static void test_placement(void)
     assert(pcb_add_component(&board, PCB_RESISTOR, (PcbPoint){NAN, 20}, 0) == -1);
     assert(pcb_add_component(&board, PCB_RESISTOR, (PcbPoint){20, 20}, 45) == -1);
     assert(pcb_add_component(&board, PCB_FOOTPRINT_COUNT, (PcbPoint){20, 20}, 0) == -1);
+    assert(strcmp(board.components[0].name, "R1") == 0);
+    assert(pcb_rename_component(&board, 0, "Power_5V"));
+    assert(!pcb_rename_component(&board, 0, ""));
+    assert(!pcb_rename_component(&board, 0, "too many characters for label"));
+    assert(!pcb_rename_component(&board, 0, "A B"));
+    assert(!pcb_rename_component(&board, 0, "bad/label"));
+    assert(!pcb_rename_component(&board, 1, "power_5v"));
+    assert(!pcb_rename_component(&board, -1, "OK"));
+    assert(strcmp(board.components[0].name, "Power_5V") == 0);
+    assert(pcb_rename_component(&board, 0, "R1"));
     int count = board.component_count;
     int id = board.components[1].id;
     assert(pcb_remove_component(&board, 0));
@@ -49,6 +59,11 @@ static void test_placement(void)
     while (board.component_count < PCB_MAX_COMPONENTS)
         assert(pcb_add_component(&board, PCB_LED, (PcbPoint){20, 20}, 0) >= 0);
     assert(pcb_add_component(&board, PCB_LED, (PcbPoint){20, 20}, 0) == -1);
+    pcb_init(&board);
+    assert(pcb_add_component(&board, PCB_RESISTOR, (PcbPoint){25.4f, 25.4f}, 0) == 0);
+    assert(pcb_rename_component(&board, 0, "R2"));
+    assert(pcb_add_component(&board, PCB_RESISTOR, (PcbPoint){40.64f, 25.4f}, 0) == 1);
+    assert(strcmp(board.components[1].name, "R3") == 0);
     pcb_init(&board);
     board.next_id = INT_MAX;
     assert(pcb_add_component(&board, PCB_LED, (PcbPoint){20, 20}, 0) == -1);
@@ -116,6 +131,29 @@ static void test_history(void)
     assert(pcb_redo(&history, &board) && board.component_count == 47);
 }
 
+static void test_name_history(void)
+{
+    PcbBoard board;
+    static PcbHistory history;
+    pcb_init(&board);
+    assert(pcb_add_component(&board, PCB_LED, (PcbPoint){25.4f, 25.4f}, 0) == 0);
+    pcb_history_init(&history, &board);
+    assert(pcb_rename_component(&board, 0, "LED_PWR"));
+    pcb_history_push(&history, &board);
+    assert(pcb_rename_component(&board, 0, "D"));
+    pcb_history_push(&history, &board);
+    assert(pcb_undo(&history, &board) && strcmp(board.components[0].name, "LED_PWR") == 0);
+    assert(pcb_undo(&history, &board) && strcmp(board.components[0].name, "D1") == 0);
+    assert(pcb_redo(&history, &board) && strcmp(board.components[0].name, "LED_PWR") == 0);
+    assert(pcb_redo(&history, &board) && strcmp(board.components[0].name, "D") == 0);
+    char error[256];
+    assert(pcb_save(&board, "build/test-named.pcb", error, sizeof(error)));
+    PcbBoard loaded;
+    assert(pcb_load(&loaded, "build/test-named.pcb", error, sizeof(error)));
+    assert(memcmp(&board, &loaded, sizeof(board)) == 0);
+    assert(remove("build/test-named.pcb") == 0);
+}
+
 static void write_fixture(const char *content)
 {
     FILE *file = fopen("build/test-invalid.pcb", "w");
@@ -131,6 +169,8 @@ static void test_persistence(void)
     pcb_init(&board);
     assert(pcb_load(&board, "examples/demo.pcb", error, sizeof(error)));
     assert(board.component_count == 5 && board.trace_count == 8);
+    assert(strcmp(board.components[0].name, "J1") == 0); /* v1 fallback */
+    assert(pcb_rename_component(&board, 0, "Input_R"));
     assert(pcb_save(&board, "build/test-roundtrip.pcb", error, sizeof(error)));
     pcb_init(&loaded);
     assert(pcb_load(&loaded, "build/test-roundtrip.pcb", error, sizeof(error)));
@@ -142,7 +182,10 @@ static void test_persistence(void)
     assert(loaded.component_count == 4 && loaded.components[0].id == 2);
     PcbBoard before = loaded;
     const char *invalid[] = {
-        "", "PCBEE 2\n", "PCBEE 1\nBOARD nan 76.2 1\n",
+        "", "PCBEE 3\n", "PCBEE 2\n", "PCBEE 1\nBOARD nan 76.2 1\n",
+        "PCBEE 2\nBOARD 101.6 76.2 3\nCOMPONENTS 1\n1 0 20 20 0 bad/name\nTRACES 0\nEND\n",
+        "PCBEE 2\nBOARD 101.6 76.2 3\nCOMPONENTS 1\n1 0 20 20 0 VeryLongComponentName\nTRACES 0\nEND\n",
+        "PCBEE 2\nBOARD 101.6 76.2 3\nCOMPONENTS 2\n1 0 20 20 0 input\n2 1 40 40 0 INPUT\nTRACES 0\nEND\n",
         "PCBEE 1\nBOARD 101.6 inf 1\n",
         "PCBEE 1\nBOARD 101.6 76.2 9999999999999999999999999\n",
         "PCBEE 1\nBOARD 101.6 76.2 1\nCOMPONENTS 129\n",
@@ -217,6 +260,7 @@ int main(void)
     test_placement();
     test_routing();
     test_history();
+    test_name_history();
     test_persistence();
     test_platform_paths();
     printf("All PCB core tests passed. Board: %zu bytes; bounded history: %zu bytes.\n",

@@ -1,6 +1,7 @@
 #include "pcb.h"
 
 #include <errno.h>
+#include <ctype.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -127,15 +128,53 @@ bool pcb_component_fits(const PcbBoard *board, const PcbComponent *component)
     return true;
 }
 
+static bool same_name(const char *a, const char *b);
+
 int pcb_add_component(PcbBoard *board, PcbFootprint type, PcbPoint position, int rotation)
 {
-    PcbComponent component = {board->next_id, type, position, rotation};
+    PcbComponent component = {board->next_id, type, position, rotation, {0}};
     if (board->component_count >= PCB_MAX_COMPONENTS || board->next_id == INT_MAX ||
         !pcb_component_fits(board, &component)) return -1;
+    bool collision;
+    do {
+        collision = false;
+        snprintf(component.name, sizeof(component.name), "%s%d", pcb_footprint(type)->prefix, component.id);
+        for (int i = 0; i < board->component_count; ++i)
+            if (same_name(component.name, board->components[i].name)) collision = true;
+        if (collision && ++component.id == INT_MAX) return -1;
+    } while (collision);
     int index = board->component_count++;
     board->components[index] = component;
-    board->next_id++;
+    board->next_id = component.id + 1;
     return index;
+}
+
+static bool valid_name(const char *name)
+{
+    if (!name) return false;
+    size_t length = 0;
+    for (; name[length]; ++length) {
+        unsigned char c = (unsigned char)name[length];
+        if (length >= PCB_NAME_SIZE - 1 || !((c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) return false;
+    }
+    return length > 0;
+}
+
+static bool same_name(const char *a, const char *b)
+{
+    while (*a && *b && toupper((unsigned char)*a) == toupper((unsigned char)*b)) { ++a; ++b; }
+    return *a == *b;
+}
+
+bool pcb_rename_component(PcbBoard *board, int index, const char *name)
+{
+    if (index < 0 || index >= board->component_count || !valid_name(name)) return false;
+    for (int i = 0; i < board->component_count; ++i)
+        if (i != index && same_name(board->components[i].name, name)) return false;
+    memset(board->components[index].name, 0, PCB_NAME_SIZE);
+    snprintf(board->components[index].name, PCB_NAME_SIZE, "%s", name);
+    return true;
 }
 
 bool pcb_remove_component(PcbBoard *board, int index)
@@ -240,12 +279,12 @@ bool pcb_save(const PcbBoard *board, const char *path, char *error, size_t error
         return fail(error, error_size, "Project path is too long.");
     FILE *file = open_project(temporary, true);
     if (!file) return fail(error, error_size, strerror(errno));
-    bool ok = fprintf(file, "PCBEE 1\nBOARD %.9g %.9g %d\nCOMPONENTS %d\n",
+    bool ok = fprintf(file, "PCBEE 2\nBOARD %.9g %.9g %d\nCOMPONENTS %d\n",
         board->width, board->height, board->next_id, board->component_count) > 0;
     for (int i = 0; i < board->component_count && ok; ++i) {
         const PcbComponent *c = &board->components[i];
-        ok = fprintf(file, "%d %d %.9g %.9g %d\n", c->id, (int)c->type,
-                     c->position.x, c->position.y, c->rotation) > 0;
+        ok = fprintf(file, "%d %d %.9g %.9g %d %s\n", c->id, (int)c->type,
+                     c->position.x, c->position.y, c->rotation, c->name) > 0;
     }
     ok = ok && fprintf(file, "TRACES %d\n", board->trace_count) > 0;
     for (int i = 0; i < board->trace_count && ok; ++i) {
@@ -323,7 +362,7 @@ bool pcb_load(PcbBoard *board, const char *path, char *error, size_t error_size)
     PcbBoard loaded;
     pcb_init(&loaded);
     int version;
-    bool ok = read_word(file, "PCBEE") && read_int(file, &version) && version == 1;
+    bool ok = read_word(file, "PCBEE") && read_int(file, &version) && (version == 1 || version == 2);
     ok = ok && read_word(file, "BOARD") && read_float(file, &loaded.width) &&
          read_float(file, &loaded.height) && read_int(file, &loaded.next_id) &&
          loaded.width >= 10 && loaded.width <= 1000 &&
@@ -335,12 +374,19 @@ bool pcb_load(PcbBoard *board, const char *path, char *error, size_t error_size)
         PcbComponent *c = &loaded.components[i];
         int type;
         ok = read_int(file, &c->id) && read_int(file, &type) &&
-             read_float(file, &c->position.x) && read_float(file, &c->position.y) &&
-             read_int(file, &c->rotation);
+              read_float(file, &c->position.x) && read_float(file, &c->position.y) &&
+              read_int(file, &c->rotation);
         if (!ok) break;
         c->type = (PcbFootprint)type;
         ok = c->id > 0 && c->id < loaded.next_id && pcb_component_fits(&loaded, c);
-        for (int j = 0; ok && j < i; ++j) ok = c->id != loaded.components[j].id;
+        if (ok && version == 1) snprintf(c->name, sizeof(c->name), "%s%d", pcb_footprint(c->type)->prefix, c->id);
+        else if (ok) {
+            char token[128];
+            ok = fscanf(file, "%127s", token) == 1 && valid_name(token);
+            if (ok) snprintf(c->name, sizeof(c->name), "%s", token);
+        }
+        for (int j = 0; ok && j < i; ++j)
+            ok = c->id != loaded.components[j].id && !same_name(c->name, loaded.components[j].name);
     }
     ok = ok && read_word(file, "TRACES") && read_int(file, &loaded.trace_count) &&
          loaded.trace_count >= 0 &&

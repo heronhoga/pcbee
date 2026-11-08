@@ -2,6 +2,7 @@
 #include "learn.h"
 #include "i18n.h"
 #include "ui.h"
+#include "export.h"
 #include "raylib.h"
 
 #include <math.h>
@@ -21,7 +22,8 @@
 
 typedef enum { TOOL_SELECT, TOOL_ROUTE, TOOL_PLACE } Tool;
 typedef enum { MODAL_NONE, MODAL_OPEN, MODAL_SAVE, MODAL_NEW_CONFIRM,
-               MODAL_OPEN_CONFIRM, MODAL_QUIT_CONFIRM, MODAL_HELP, MODAL_LEARN_START } Modal;
+               MODAL_OPEN_CONFIRM, MODAL_QUIT_CONFIRM, MODAL_HELP, MODAL_LEARN_START,
+               MODAL_RENAME, MODAL_EXPORT } Modal;
 typedef struct {
     PcbBoard board, saved;
     PcbHistory history;
@@ -119,6 +121,16 @@ static void fit_board(void)
                           (area.height - 120) / app.board.height);
 }
 
+static void zoom_component(float factor)
+{
+    if (app.selected_component < 0 || app.selected_component >= app.board.component_count) return;
+    Rectangle area = canvas();
+    app.camera.target = (Vector2){app.board.components[app.selected_component].position.x,
+                                    app.board.components[app.selected_component].position.y};
+    app.camera.offset = (Vector2){area.x + area.width / 2, area.y + area.height / 2};
+    app.camera.zoom = fmaxf(0.3f, fminf(60, app.camera.zoom * factor));
+}
+
 static void finish_interaction(void)
 {
     if (app.dragging && app.selected_component >= 0)
@@ -145,6 +157,12 @@ static void open_modal(Modal modal)
     finish_interaction();
     app.modal = modal;
     snprintf(app.input, sizeof(app.input), "%s", app.path);
+    if (modal == MODAL_RENAME && app.selected_component >= 0)
+        snprintf(app.input, sizeof(app.input), "%s", app.board.components[app.selected_component].name);
+    if (modal == MODAL_EXPORT) {
+        size_t len = strlen(app.input);
+        if (len >= 4 && strcmp(app.input + len - 4, ".pcb") == 0) app.input[len - 4] = '\0';
+    }
     /* Discard the shortcut's text event before opening a path field. */
     while (GetCharPressed() != 0) {}
 }
@@ -313,9 +331,9 @@ static void draw_component(const PcbComponent *component, Color color, bool high
     if (!ghost && zoom >= 3) {
         Vector2 center = screen_point(component->position);
         float height = component->rotation % 180 ? info->body_width : info->body_height;
-        const char *label = TextFormat("%s%d", info->prefix, component->id);
-        draw_text(label, (int)(center.x - text_width(label, 14) / 2),
-                 (int)(center.y - height * zoom / 2 - 19), 14, outline);
+        const char *label = component->name[0] ? component->name : TextFormat("%s%d", info->prefix, component->id);
+        ui_text(label, (int)(center.x - ui_text_width(label, 14) / 2),
+                (int)(center.y - height * zoom / 2 - 19), 14, outline);
     }
     if (highlight) {
         Vector2 center = screen_point(component->position);
@@ -450,6 +468,10 @@ static void keyboard(void)
     if (IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_T)) set_tool(TOOL_ROUTE);
     if (IsKeyPressed(KEY_R)) rotate_selection();
     if (IsKeyPressed(KEY_F)) fit_board();
+    if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) zoom_component(1.5f);
+    if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) zoom_component(1.0f / 1.5f);
+    if (IsKeyPressed(KEY_N) && app.selected_component >= 0) open_modal(MODAL_RENAME);
+    if (IsKeyPressed(KEY_E)) open_modal(MODAL_EXPORT);
     if (IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE)) delete_selection();
     if (IsKeyPressed(KEY_F1)) open_modal(MODAL_HELP);
     if (IsKeyPressed(KEY_F2)) {
@@ -559,7 +581,7 @@ static void draw_board(void)
     if (over && !IsKeyDown(KEY_SPACE)) {
         PcbPoint point = snap_cursor(world_point(GetMousePosition()), app.tool == TOOL_ROUTE);
         if (app.tool == TOOL_PLACE) {
-            PcbComponent ghost = {0, app.footprint, point, app.rotation};
+            PcbComponent ghost = {0, app.footprint, point, app.rotation, {0}};
             draw_component(&ghost, pcb_component_fits(&app.board, &ghost) ? selected : RED, false, true);
         }
         if (app.tool == TOOL_ROUTE && pcb_contains(&app.board, point)) {
@@ -732,9 +754,12 @@ static void draw_sidebar(void)
     DrawRectangle(0, HEADER, SIDEBAR, GetScreenHeight() - HEADER - FOOTER, panel);
     DrawLine(SIDEBAR - 1, HEADER, SIDEBAR - 1, GetScreenHeight() - FOOTER, border);
     draw_text("TOOLS", 20, 97, 12, muted);
+    if (button((Rectangle){126, 88, 86, 28}, "Rename", false, enabled && app.selected_component >= 0))
+        open_modal(MODAL_RENAME);
     if (button((Rectangle){16, 122, 94, 36}, "Select  1", app.tool == TOOL_SELECT, enabled)) set_tool(TOOL_SELECT);
     if (button((Rectangle){118, 122, 94, 36}, "Route  2", app.tool == TOOL_ROUTE, enabled)) set_tool(TOOL_ROUTE);
     draw_text("FOOTPRINTS", 20, 184, 12, muted);
+    if (button((Rectangle){132, 176, 80, 26}, "Export", false, enabled)) open_modal(MODAL_EXPORT);
     for (int i = 0; i < PCB_FOOTPRINT_COUNT; ++i) {
         const PcbFootprintInfo *info = pcb_footprint((PcbFootprint)i);
         Rectangle rect = {16, 208 + i * 57.0f, 196, 49};
@@ -759,6 +784,10 @@ static void draw_sidebar(void)
     DrawLine(16, 590, 212, 590, border);
     draw_text(TextFormat(tr("%d components"), app.board.component_count), 20, 607, 15, text);
     draw_text(TextFormat(tr("%d trace segments"), app.board.trace_count), 20, 631, 15, text);
+    if (button((Rectangle){16, 657, 90, 26}, "Zoom -", false, enabled && app.selected_component >= 0))
+        zoom_component(1.0f / 1.5f);
+    if (button((Rectangle){122, 657, 90, 26}, "Zoom +", false, enabled && app.selected_component >= 0))
+        zoom_component(1.5f);
     if (GetScreenHeight() >= 780) {
         draw_text("R    Rotate footprint", 20, GetScreenHeight() - 101, 12, muted);
         draw_text("Del  Delete selection", 20, GetScreenHeight() - 80, 12, muted);
@@ -783,7 +812,31 @@ static void draw_status(void)
 
 static void submit_path(void)
 {
-    if (!app.input[0]) { notify("Enter a project path first."); return; }
+    if (!app.input[0]) { notify(app.modal == MODAL_RENAME ? "Enter a component label." :
+                               app.modal == MODAL_EXPORT ? "Enter an export prefix." :
+                               "Enter a project path first."); return; }
+    if (app.modal == MODAL_RENAME) {
+        bool changed = app.selected_component >= 0 &&
+                       strcmp(app.board.components[app.selected_component].name, app.input) != 0;
+        if (app.selected_component < 0 || !pcb_rename_component(&app.board, app.selected_component, app.input)) {
+            notify("Name must be unique: 1-16 ASCII letters, digits, _ or -.");
+            return;
+        }
+        if (changed) pcb_history_push(&app.history, &app.board);
+        app.modal = MODAL_NONE;
+        notify("Component renamed.");
+        return;
+    }
+    if (app.modal == MODAL_EXPORT) {
+        char error[256];
+        if (!pcb_export_gerber(&app.board, app.input, error, sizeof(error))) {
+            notify(error);
+            return;
+        }
+        app.modal = MODAL_NONE;
+        notify("Gerber and drill files exported. Review them in a Gerber viewer before ordering.");
+        return;
+    }
     char error[256];
     bool saving = app.modal == MODAL_SAVE;
     bool ok = saving ? pcb_save(&app.board, app.input, error, sizeof(error)) :
@@ -810,13 +863,16 @@ static void draw_modal(void)
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0, 0, 0, 160});
     bool help = app.modal == MODAL_HELP;
     bool learn = app.modal == MODAL_LEARN_START;
-    bool path = app.modal == MODAL_OPEN || app.modal == MODAL_SAVE;
-    float width = 650, height = help ? 500 : learn ? 300 : 250;
+    bool rename = app.modal == MODAL_RENAME;
+    bool exporting = app.modal == MODAL_EXPORT;
+    bool path = app.modal == MODAL_OPEN || app.modal == MODAL_SAVE || rename || exporting;
+    float width = 650, height = help ? 540 : learn || exporting ? 300 : 250;
     float x = (GetScreenWidth() - width) / 2, y = (GetScreenHeight() - height) / 2;
     DrawRectangleRounded((Rectangle){x, y, width, height}, 0.035f, 4, panel);
     const char *title = help ? "A small workbench for your next idea." :
         learn ? "Learn PCB design: LED lab" :
-        path ? (app.modal == MODAL_SAVE ? "Save project" : "Open project") : "Unsaved changes";
+        path ? (rename ? "Rename component" : exporting ? "Export fabrication files" :
+                app.modal == MODAL_SAVE ? "Save project" : "Open project") : "Unsaved changes";
     draw_text(title, (int)x + 28, (int)y + 25, fit_text_size(title, 24, (int)width - 56), text);
     if (help) {
         const char *lines[] = {
@@ -825,6 +881,9 @@ static void draw_modal(void)
             "R                     Rotate a footprint by 90 degrees",
             "Delete / Backspace    Delete the selected footprint or segment",
             "Scroll                Zoom around the pointer",
+            "+ / -                 Zoom in/out on the selected component",
+            "N / Rename            Rename selected component (1-16 characters)",
+            "E / Export            Write Gerber layers and plated drill file",
             "Middle drag / Space   Pan (Space + left drag)",
             "F                     Fit the board in the window",
             "Esc / Right-click     Cancel placement or finish a route",
@@ -833,9 +892,11 @@ static void draw_modal(void)
             "F2 / Learn PCB        Start or close the interactive LED lesson",
             "F3                    Switch English / Bahasa Indonesia"
         };
-        for (int i = 0; i < 12; ++i) draw_text(lines[i], (int)x + 28, (int)y + 74 + i * 25, 14, muted);
-        draw_text("Layout prototype: no netlist, general DRC, or manufacturing export.",
-                 (int)x + 28, (int)y + 387, 14, accent);
+        for (int i = 0; i < 15; ++i)
+            draw_text(lines[i], (int)x + 28, (int)y + 72 + i * 23,
+                      fit_text_size(lines[i], 14, (int)width - 56), muted);
+        draw_text("Export is geometry only: inspect for shorts/clearances before ordering.",
+                  (int)x + 28, (int)y + 419, 13, accent);
         if (button((Rectangle){x + width - 116, y + height - 58, 88, 34}, "Got it", true, true) ||
             IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_ENTER)) app.modal = MODAL_NONE;
     } else if (learn) {
@@ -850,14 +911,16 @@ static void draw_modal(void)
         if (button((Rectangle){x + width - 156, y + height - 58, 128, 34},
                    dirty() ? "Discard & start" : "Start lesson", true, true)) start_lesson();
     } else if (path) {
-        draw_text("Project file path (.pcb). Relative paths use the working directory.",
+        draw_text(rename ? "Unique label (1-16 letters, digits, _ or -). Also used on silkscreen." :
+                  exporting ? "Output prefix: seven Gerber and plated drill files (.gbr / .drl)." :
+                  "Project file path (.pcb). Relative paths use the working directory.",
                  (int)x + 28, (int)y + 65, 14, muted);
         int ch;
         while ((ch = GetCharPressed()) != 0) {
             size_t length = strlen(app.input);
             int bytes = 0;
             const char *encoded = CodepointToUTF8(ch, &bytes);
-            if (ch >= 32 && ch != 127 && bytes > 0 && length + (size_t)bytes < sizeof(app.input)) {
+            if (ch >= 32 && ch != 127 && bytes > 0 && length + (size_t)bytes < (rename ? PCB_NAME_SIZE : sizeof(app.input))) {
                 memcpy(app.input + length, encoded, (size_t)bytes);
                 app.input[length + (size_t)bytes] = '\0';
             }
@@ -867,7 +930,7 @@ static void draw_modal(void)
         if (command && IsKeyPressed(KEY_A)) app.input[0] = '\0';
         if (command && IsKeyPressed(KEY_V)) {
             const char *clipboard = GetClipboardText();
-            if (clipboard && strlen(clipboard) < sizeof(app.input))
+            if (clipboard && strlen(clipboard) < (rename ? PCB_NAME_SIZE : sizeof(app.input)))
                 snprintf(app.input, sizeof(app.input), "%s", clipboard);
             else if (clipboard) notify("The pasted path is too long.");
         }
@@ -888,8 +951,13 @@ static void draw_modal(void)
             BeginScissorMode((int)x + 28, (int)y + 146, (int)width - 56, 22);
             draw_text(app.message, (int)x + 28, (int)y + 148, 13, accent);
             EndScissorMode();
-        } else draw_text("Ctrl/Cmd + A clears the path; Ctrl/Cmd + V pastes a path.",
-                        (int)x + 28, (int)y + 148, 12, muted);
+        } else draw_text(rename ? "Enter confirms; Esc cancels. Undo restores the previous label." :
+                         exporting ? "Includes copper, mask, silkscreen, outline and plated holes." :
+                         "Ctrl/Cmd + A clears the path; Ctrl/Cmd + V pastes a path.",
+                         (int)x + 28, (int)y + 148, 12, muted);
+        if (exporting)
+            wrapped_text("Geometry only: no electrical or clearance checks. Review every layer and hole before ordering.",
+                         (int)x + 28, (int)y + 184, (int)width - 56, 14, accent);
         if (button((Rectangle){x + width - 214, y + height - 58, 88, 34}, "Cancel", false, true) ||
             IsKeyPressed(KEY_ESCAPE)) app.modal = MODAL_NONE;
         if (button((Rectangle){x + width - 116, y + height - 58, 88, 34}, "Confirm", true, true) ||

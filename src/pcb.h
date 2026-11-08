@@ -9,6 +9,7 @@
 #define PCB_MAX_PADS 8
 #define PCB_HISTORY_SIZE 32
 #define PCB_GRID 1.27f
+#define PCB_NAME_SIZE 17
 
 typedef struct { float x, y; } PcbPoint;
 typedef enum {
@@ -31,6 +32,7 @@ typedef struct {
     PcbFootprint type;
     PcbPoint position;
     int rotation;
+    char name[PCB_NAME_SIZE]; /* ASCII reference/label, including terminator. */
 } PcbComponent;
 
 typedef struct {
@@ -60,6 +62,7 @@ PcbPoint pcb_snap(PcbPoint point);
 bool pcb_contains(const PcbBoard *board, PcbPoint point);
 bool pcb_component_fits(const PcbBoard *board, const PcbComponent *component);
 int pcb_add_component(PcbBoard *board, PcbFootprint type, PcbPoint position, int rotation);
+bool pcb_rename_component(PcbBoard *board, int index, const char *name);
 bool pcb_remove_component(PcbBoard *board, int index);
 bool pcb_remove_trace(PcbBoard *board, int index);
 PcbPoint pcb_route_corner(PcbPoint a, PcbPoint b);

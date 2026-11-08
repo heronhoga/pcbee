@@ -5,9 +5,9 @@
 #include <stdio.h>
 
 const PcbComponent learn_targets[LEARN_PARTS] = {
-    {1, PCB_HEADER, {12.7f, 22.86f}, 90},
-    {2, PCB_RESISTOR, {30.48f, 12.7f}, 0},
-    {3, PCB_LED, {48.26f, 22.86f}, 270}
+    {1, PCB_HEADER, {12.7f, 22.86f}, 90, "J1"},
+    {2, PCB_RESISTOR, {30.48f, 12.7f}, 0, "R2"},
+    {3, PCB_LED, {48.26f, 22.86f}, 270, "D3"}
 };
 const char *const learn_net_names[3] = {"+5 V", "LED drive", "GND"};
 /* Header 1..4, resistor 1..2, LED K/A. Unused header pads are separate nets. */
